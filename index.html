@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#183b34">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>Meraki &amp; Mirth — Catalogue Studio</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="assets/brand-logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;1,500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=59">
+</head>
+<body class="auth-pending">
+  <section id="authGate" class="auth-gate" aria-live="polite">
+    <div class="auth-card">
+      <img src="assets/meraki-mirth-logo-original.png" alt="Meraki &amp; Mirth">
+      <p class="section-label">PRIVATE WORKSPACE</p>
+      <h1>Welcome back.</h1>
+      <p id="authMessage">Sign in with your approved email and password to manage the catalogue and orders.</p>
+      <form id="passwordSignIn" class="password-sign-in">
+        <label>Email<input id="loginEmail" name="email" type="email" autocomplete="email" required></label>
+        <label>Password<input id="loginPassword" name="password" type="password" autocomplete="current-password" required></label>
+        <button class="primary-btn" type="submit">Sign in</button>
+      </form>
+      <button id="claimWorkspace" class="soft-btn" hidden>Claim this workspace</button>
+      <button id="signOut" class="text-btn" hidden>Sign out</button>
+    </div>
+  </section>
+  <aside class="sidebar no-print">
+    <div class="brand"><img src="assets/meraki-mirth-logo-original.png" alt="Meraki &amp; Mirth"></div>
+    <nav>
+      <button class="nav active" data-view="studio"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z"/></svg>Studio</button>
+      <button class="nav" data-view="library"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6"/><rect x="14" y="4" width="6" height="6"/><rect x="4" y="14" width="6" height="6"/><rect x="14" y="14" width="6" height="6"/></svg>Product library</button>
+      <button class="nav" data-view="catalogues"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"/><path d="M9 10h6M9 14h6M9 18h4"/></svg>Catalogue Studio</button>
+      <button class="nav" data-view="quotes"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M9 5h10v10"/></svg>Quote sharing</button>
+      <button class="nav" data-view="orders"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>Orders</button>
+      <button class="nav" data-view="contacts"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 20c.8-3.2 2.7-5 5.5-5s4.7 1.8 5.5 5M16 9h5M18.5 6.5v5"/></svg>Clients &amp; vendors</button>
+      <button class="nav" data-view="inventory"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m4 8 8-4 8 4-8 4zM4 8v8l8 4 8-4V8M12 12v8"/></svg>Inventory</button>
+      <button class="nav" data-view="expenses"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h10M7 9h10M10 5c0 5 4 5 7 5M7 19h10M8 19l8-10"/></svg>Expenses</button>
+    </nav>
+    <p class="sidebar-foot">For the moments<br>worth thanking.</p>
+  </aside>
+  <nav class="mobile-nav no-print" aria-label="Main navigation">
+    <button class="nav active" data-view="studio" aria-label="Studio"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z"/></svg><small>Studio</small></button>
+    <button class="nav" data-view="library" aria-label="Product library"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6"/><rect x="14" y="4" width="6" height="6"/><rect x="4" y="14" width="6" height="6"/><rect x="14" y="14" width="6" height="6"/></svg><small>Products</small></button>
+    <button class="nav" data-view="catalogues" aria-label="Catalogue Studio"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"/><path d="M9 10h6M9 14h6M9 18h4"/></svg><small>Catalogues</small></button>
+    <button class="nav" data-view="quotes" aria-label="Quote sharing"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M9 5h10v10"/></svg><small>Quotes</small></button>
+    <button class="nav" data-view="orders" aria-label="Orders"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg><small>Orders</small></button>
+    <button class="nav" data-view="contacts" aria-label="Clients and vendors"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 20c.8-3.2 2.7-5 5.5-5s4.7 1.8 5.5 5M16 9h5M18.5 6.5v5"/></svg><small>Contacts</small></button>
+    <button class="nav" data-view="inventory" aria-label="Inventory"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m4 8 8-4 8 4-8 4zM4 8v8l8 4 8-4V8M12 12v8"/></svg><small>Inventory</small></button>
+    <button class="nav" data-view="expenses" aria-label="Expenses"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h10M7 9h10M10 5c0 5 4 5 7 5M7 19h10M8 19l8-10"/></svg><small>Expenses</small></button>
+  </nav>
+  <main>
+    <span id="signedInAs" hidden></span>
+
+    <section class="view active" id="studio">
+      <div class="studio-tabs" role="tablist" aria-label="Studio workspace"><button class="studio-tab active" type="button" role="tab" aria-selected="true" data-studio-tab="design">Design a combo</button><button class="studio-tab" type="button" role="tab" aria-selected="false" data-studio-tab="manage">Manage combos</button></div>
+      <div class="studio-tab-panel active" id="studioDesign" role="tabpanel">
+        <div class="studio-grid">
+          <aside class="editor studio-brief-panel">
+            <div class="form-section"><p class="section-label">COMBO BRIEF</p>
+              <label>Occasion<select id="occasion" aria-label="Occasion"></select></label>
+              <label>Combo name<input id="comboName" placeholder="e.g. Festive Glow Return Gift Combo"></label>
+              <div class="price-builder" aria-label="Combo pricing"><label>Product cost<input id="productCost" type="text" value="₹ 0" readonly></label><label>Margin<select id="marginRange" aria-label="Margin"><option value="10">10%</option><option value="15">15%</option><option value="20">20%</option><option value="25">25%</option><option value="30" selected>30%</option><option value="35">35%</option><option value="40">40%</option><option value="45">45%</option><option value="50">50%</option></select></label><label>Final price<input id="comboRate" type="text" value="₹ 0" readonly></label></div>
+            </div>
+            <div class="form-section inclusions"><p class="section-label">INCLUSIONS</p><ul id="inclusionList"><li>Select products to build your inclusion list.</li></ul></div>
+            <div class="editor-actions"><button id="clearCombo" class="text-btn">Clear</button><button id="saveCombo" class="primary-btn">Save combo</button></div>
+          </aside>
+          <section class="editor studio-products-panel"><div class="form-section"><div class="section-row"><p class="section-label">SELECT PRODUCTS</p><span id="selectionLabel">0 / 12 selected</span></div><p class="hint" id="pickerHint">Choose up to 12 products from your library. The collage shows six at a time and marks any more.</p><div class="studio-picker-filters"><label class="studio-product-search" for="studioProductSearch">Search products<input id="studioProductSearch" type="search" placeholder="Type a product name" autocomplete="off"></label><label>Product occasion<select id="studioProductOccasion" aria-label="Filter products by occasion"></select></label><label>Budget from (₹)<input id="studioBudgetMin" type="number" min="0" step="1" placeholder="No minimum" inputmode="decimal"></label><label>Budget to (₹)<input id="studioBudgetMax" type="number" min="0" step="1" placeholder="No maximum" inputmode="decimal"></label><div class="studio-sort-control"><span>Sort</span><button id="studioProductSortToggle" type="button" aria-label="Choose product sorting" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h8M8 18h4M4 4v16M4 4 2 6m2-2 2 2M4 20l-2-2m2 2 2-2"/></svg></button><div id="studioProductSortMenu" class="studio-sort-menu" role="menu" hidden><button type="button" role="menuitemradio" data-studio-product-sort="name-asc">Name: A–Z</button><button type="button" role="menuitemradio" data-studio-product-sort="name-desc">Name: Z–A</button><button type="button" role="menuitemradio" data-studio-product-sort="price-asc">Price: low to high</button><button type="button" role="menuitemradio" data-studio-product-sort="price-desc">Price: high to low</button></div></div></div><div class="product-picker-scroll"><div class="product-picker" id="productPicker"></div></div><p class="empty-state" id="pickerEmpty">Add products to the Product library first.</p></div></section>
+        </div>
+      </div>
+      <div class="studio-tab-panel" id="studioManage" role="tabpanel" hidden>
+        <section class="saved-combos manage-combos"><div class="manage-combos-heading"><div><p class="section-label">SAVED COMBOS</p><h2>Maintain your combinations</h2><p>Review every saved combo, then edit or remove it when needed.</p></div><label>Filter by occasion<select id="manageComboOccasion" aria-label="Filter combos by occasion"></select></label></div><div class="section-row"><span id="comboCount"></span></div><div id="comboList" class="combo-list"></div></section>
+      </div>
+    </section>
+
+    <section class="view" id="library">
+      <div class="page-heading"><div><p class="section-label">YOUR INGREDIENTS</p><h2>Product library</h2><p>Add each item once. Its image and name are reused when you build combos.</p></div><div class="page-heading-actions"><button id="manageOccasions" class="soft-btn">Manage occasions</button><button id="addProduct" class="primary-btn">Add product</button></div></div>
+      <div class="library-filter"><label>Filter products by event<select id="libraryEventFilter"></select></label><label>Search products<input id="librarySearch" type="search" placeholder="Type a product name" autocomplete="off"></label><label>Sort products<select id="librarySort"><option value="name-asc">Product name: A–Z</option><option value="rate-asc">Rate: low to high</option><option value="rate-desc">Rate: high to low</option><option value="added-desc">Recently added</option><option value="added-asc">Oldest added</option></select></label></div>
+      <div id="libraryGrid" class="library-grid"></div>
+      <p id="libraryEmpty" class="library-empty">Your product library is empty. Add the first product to begin.</p>
+    </section>
+
+    <section class="view" id="catalogues">
+      <div class="page-heading"><div><p class="section-label">CLIENT-READY EXPORTS</p><h2>Catalogue Studio</h2><p>Choose up to six combos and download a polished, client-ready catalogue PDF.</p></div></div>
+      <div class="catalogue-controls"><label>Filter catalogues<select id="catalogueOccasion" aria-label="Filter catalogues by occasion"></select></label><label>Client name <input id="catalogueClientName" maxlength="80" placeholder="Optional, e.g. Ashwini"></label><button id="exportCatalogue" class="export-btn">Download catalogue PDF <span>↓</span></button></div>
+      <div id="catalogueComboList" class="catalogue-combo-list"></div><p id="catalogueEmpty" class="library-empty">Choose an occasion to see its saved combos.</p>
+    </section>
+    <section class="view" id="quotes">
+      <div class="page-heading"><div><p class="section-label">CLIENT COMMUNICATION</p><h2>Quote sharing</h2><p>Shape a warm, client-ready quote, then save it as a quotation for the team to track.</p></div></div>
+      <div class="quote-workspace">
+        <div class="quote-form">
+          <section class="quote-form-section" aria-labelledby="clientCelebrationHeading">
+            <p class="section-label" id="clientCelebrationHeading">1. CLIENT &amp; CELEBRATION</p>
+            <div class="form-columns"><label>Client name<input id="quoteClientName" maxlength="80" autocomplete="name" placeholder="e.g. Ashwini"></label><label>Mobile number<input id="quoteClientMobile" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" placeholder="e.g. 98765 43210"></label></div>
+            <label>Celebration title<input id="quoteTitle" maxlength="120" placeholder="e.g. Ash's wedding bash"></label>
+            <label>Occasion<select id="quoteOccasion" aria-label="Quote occasion"></select></label>
+            <label>Combo<select id="quoteCombo"></select></label>
+            <div class="form-columns"><label>Quantity<input id="quoteQuantity" type="number" min="1" value="50"></label><label>Margin <select id="quoteMargin"><option value="10">10%</option><option value="15">15%</option><option value="20">20%</option><option value="25">25%</option><option value="30" selected>30%</option><option value="35">35%</option><option value="40">40%</option><option value="45">45%</option><option value="50">50%</option></select></label></div>
+            <div class="form-columns"><label>Event date<input id="quoteEventDate" type="date"></label><label>Delivery date<input id="quoteDeliveryDate" type="date"></label></div>
+            <label>Delivery area<input id="quoteDeliveryArea" maxlength="160" autocomplete="address-level2" placeholder="e.g. Kodambakkam, Chennai"></label>
+          </section>
+          <section class="quote-form-section quote-extras-section" aria-labelledby="quoteExtrasHeading">
+            <p class="section-label" id="quoteExtrasHeading">2. PRESENTATION &amp; EXTRAS</p>
+            <div class="quote-option-grid"><label>Net wrapping<select id="quoteNetWrapping"><option value="false">No</option><option value="true">Yes</option></select></label><label id="quoteNetWrappingPriceField" hidden>Wrap fee (₹)<input id="quoteNetWrappingPrice" type="number" min="0" step="0.01" value="0" inputmode="decimal" placeholder="0"></label><label>Discount (%)<input id="quoteDiscountPercent" type="number" min="0" max="100" step="1" value="0" inputmode="decimal" placeholder="0"></label></div>
+            <small>Discount is applied after wrapping and any internal cost adjustments.</small>
+            <section class="quote-internal-costs" aria-labelledby="quoteInternalCostsHeading"><div class="quote-inline-heading"><div><p class="section-label" id="quoteInternalCostsHeading">INTERNAL COSTS</p><small>Included in the total and saved for the team, but never named in the client quote.</small></div><button id="addQuoteAdditionalCost" class="text-btn" type="button">+ Add cost</button></div><div id="quoteAdditionalCosts" class="quote-additional-cost-list"></div></section>
+            <label>Complimentary touches<textarea id="quoteComplimentary" maxlength="500" rows="3" placeholder="e.g. Complimentary 1.5 inch thank-you card and handwritten note."></textarea></label>
+            <small>Anything you add here appears in the client quote and stays with the team’s saved quotation.</small>
+            <label>Special request from client<textarea id="quoteSpecialRequest" maxlength="500" rows="4" placeholder="e.g. Please use a pastel palette and deliver by 10 September."></textarea></label>
+            <small>This stays with the saved quotation so the team can honour every detail.</small>
+          </section>
+          <div class="quote-actions"><button id="exportQuote" class="primary-btn">Download quote PDF <span>↓</span></button><button id="copyQuote" class="soft-btn">Copy WhatsApp message</button><button id="saveOrder" class="soft-btn">Save quotation &amp; view tracking</button></div>
+        </div>
+        <article id="quotePreview" class="quote-preview"></article>
+      </div>
+    </section>
+    <section class="view" id="inventory">
+      <div class="page-heading"><div><p class="section-label">STOCK CONTROL</p><h2>Inventory</h2><p>Keep product availability, replenishment thresholds, and stock history in one shared place.</p></div><button id="inventoryAddProduct" class="primary-btn">Add product</button></div>
+      <div class="inventory-summary" aria-label="Inventory summary">
+        <article><span>Products tracked</span><b id="inventoryProductCount">0</b></article>
+        <article><span>Units on hand</span><b id="inventoryUnitsOnHand">0</b></article>
+        <article><span>Low stock</span><b id="inventoryLowStock">0</b></article>
+        <article><span>Out of stock</span><b id="inventoryOutOfStock">0</b></article>
+      </div>
+      <div class="inventory-controls"><label>Search products<input id="inventorySearch" type="search" placeholder="Type a product name" autocomplete="off"></label><label>Availability<select id="inventoryStatus"><option value="all">All products</option><option value="low">Low stock</option><option value="out">Out of stock</option><option value="in">In stock</option></select></label></div>
+      <div class="inventory-table-wrap"><table class="inventory-table"><thead><tr><th>Product</th><th>Product ID</th><th>On hand</th><th>Reorder at</th><th>Status</th><th></th></tr></thead><tbody id="inventoryTable"></tbody></table></div><div id="inventoryPagination" class="table-pagination" aria-label="Inventory pagination"></div>
+      <p id="inventoryEmpty" class="library-empty">No products match this inventory view.</p>
+    </section>
+    <section class="view" id="expenses">
+      <div class="page-heading"><div><p class="section-label">SHARED EXPENSES</p><h2>Expense desk</h2><p>Record purchases and delivery costs, approve them independently, and settle every admin fairly.</p></div><button id="addExpense" class="primary-btn">Add expense</button></div>
+      <div id="expenseBalanceCards" class="expense-balance-cards" aria-label="Balances to settle"></div>
+      <div class="expense-summary" aria-label="Expense summary"><article><span>Awaiting approval</span><b id="expensePendingTotal">₹ 0</b></article><article><span>Ready to settle</span><b id="expenseApprovedTotal">₹ 0</b></article><article><span>Settled</span><b id="expenseSettledTotal">₹ 0</b></article></div>
+      <section class="expense-ledger"><div class="section-row"><div><p class="section-label">EXPENSE LEDGER</p><h3>Recent claims</h3></div><span id="expenseClaimCount"></span></div><div id="expenseList" class="expense-list"></div><p id="expenseEmpty" class="library-empty">No expense claims yet. Add the first one when a purchase or delivery is paid for.</p></section>
+    </section>
+    <section class="view" id="contacts">
+      <div class="page-heading"><div><p class="section-label">RELATIONSHIP DESK</p><h2>Clients &amp; vendors</h2><p>Keep every client’s delivery details and every supplier’s contact details in one shared directory.</p></div><div class="contacts-actions"><button id="addClient" class="soft-btn">Add client</button><button id="addVendor" class="primary-btn">Add vendor</button></div></div>
+      <div class="contacts-tabs" role="tablist" aria-label="Contacts"><button class="contacts-tab active" type="button" role="tab" aria-selected="true" data-contacts-tab="clients">Clients</button><button class="contacts-tab" type="button" role="tab" aria-selected="false" data-contacts-tab="vendors">Vendors</button></div>
+      <div class="contacts-panel active" id="contactsClients" role="tabpanel"><div class="contacts-search"><label>Search clients<input id="clientSearch" type="search" placeholder="Name, mobile number, or delivery area" autocomplete="off"></label><span id="clientCount"></span></div><div class="contacts-table-wrap"><table class="contacts-table"><thead><tr><th>Client</th><th>Mobile</th><th>Delivery area</th><th>Celebrations</th><th>Latest celebration</th></tr></thead><tbody id="clientsTable"></tbody></table></div><p id="clientsEmpty" class="library-empty">No clients yet. A client is added automatically when you save a quotation.</p></div>
+      <div class="contacts-panel" id="contactsVendors" role="tabpanel" hidden><div class="contacts-search"><label>Search vendors<input id="vendorSearch" type="search" placeholder="Vendor name, phone, or email" autocomplete="off"></label><span id="vendorCount"></span></div><div class="contacts-table-wrap"><table class="contacts-table"><thead><tr><th>Vendor</th><th>Contact</th><th>Location</th><th>Products supplied</th><th></th></tr></thead><tbody id="vendorsTable"></tbody></table></div><p id="vendorsEmpty" class="library-empty">No vendors yet. Add a supplier here to keep their details ready for the next purchase.</p></div>
+    </section>
+    <section class="view" id="orders">
+      <div class="page-heading"><div><p class="section-label">CELEBRATION WORKBOARD</p><h2>Orders</h2><p>Follow every quotation from its first hello to a beautifully completed delivery.</p></div></div>
+      <div class="orders-filters"><label>From<input id="ordersFrom" type="date"></label><label>To<input id="ordersTo" type="date"></label><button id="ordersThisYear" class="soft-btn">This year</button></div>
+      <div class="orders-summary" aria-label="Order summary"><article><span>Celebrations</span><b id="ordersCount">0</b></article><article><span>In packing</span><b id="ordersPacking">0</b></article><article><span>Delivered</span><b id="ordersDelivered">0</b></article><article><span>Converted</span><b id="ordersConversion">0%</b></article><article><span>Realised profit</span><b id="ordersProfit">₹ 0</b></article></div>
+      <div id="ordersList" class="orders-list"></div><p id="ordersEmpty" class="library-empty">No quotations or orders in this date range yet.</p>
+    </section>
+  </main>
+
+  <dialog id="productDialog"><form id="productForm"><button type="button" class="close" id="closeDialog" aria-label="Close product editor">×</button><p class="section-label" id="dialogLabel">NEW PRODUCT</p><h2 id="dialogTitle">Add a product</h2><label>Product name<input name="name" required placeholder="e.g. Scented Candle — Jasmine & Mogra"></label><div class="form-columns product-price-fields"><label>Product cost (₹)<input name="rate" type="number" min="0" step="0.01" inputmode="decimal" required placeholder="120"></label><label>Buffer (₹)<input name="buffer" type="number" min="0" step="0.01" inputmode="decimal" placeholder="9.60"></label><label>Final product price (₹)<input id="productRoundedPrice" type="text" value="₹ 0" readonly aria-live="polite"></label></div><small>Buffer defaults to 8% of the product cost. The final product price rounds down below ₹0.50 and up from ₹0.50.</small><div class="form-columns"><label>Supplier<input name="supplier" list="productSupplierOptions" placeholder="Optional"></label><label>Reorder at (units)<input name="reorderLevel" type="number" min="0" value="0"></label></div><label>Supplier lead time (days)<input name="leadTimeDays" type="number" min="0" value="0"></label><fieldset class="event-tags"><legend>Suitable occasions</legend><div id="eventTagChoices"></div></fieldset><label>Product image<input name="image" type="file" accept="image/*"></label><small>Set the opening stock from Inventory after saving. Images are saved to the shared catalogue storage and reused in catalogue pages.</small><button class="primary-btn" type="submit">Save product</button></form></dialog>
+  <dialog id="occasionDialog" class="occasion-dialog"><button type="button" class="close" id="closeOccasionDialog" aria-label="Close occasion manager">×</button><div id="occasionManager"></div></dialog>
+  <datalist id="productSupplierOptions"></datalist>
+  <dialog id="inventoryDialog" class="inventory-dialog"><form id="inventoryForm"><button type="button" class="close" id="closeInventoryDialog" aria-label="Close inventory editor">×</button><p class="section-label">STOCK MOVEMENT</p><h2>Update inventory</h2><label>Product<select name="productId" id="inventoryProduct"></select></label><p class="current-stock">Current stock <b id="inventoryCurrentStock">0 units</b></p><label>Action<select name="action" id="inventoryAction"><option value="receive">Receive stock</option><option value="set">Set current stock</option><option value="damage">Record damaged / unusable stock</option><option value="adjustment">Manual adjustment</option></select></label><label id="inventoryQuantityLabel">Units received<input name="quantity" id="inventoryQuantity" type="number" min="1" step="1" required></label><label>Reorder at (units)<input name="reorderLevel" id="inventoryReorderLevel" type="number" min="0" step="1" value="0"></label><label>Note <input name="note" maxlength="240" placeholder="e.g. Supplier delivery received"></label><small>Every stock change is recorded in the inventory history. Stock cannot go below zero.</small><button class="primary-btn" type="submit">Save stock update</button></form></dialog>
+  <dialog id="expenseDialog" class="expense-dialog"><form id="expenseForm"><button type="button" class="close" id="closeExpenseDialog" aria-label="Close expense editor">×</button><p class="section-label">NEW EXPENSE CLAIM</p><h2>Add an expense</h2><label>Expense type<select name="expenseType" id="expenseType"><option value="purchase">Product purchase</option><option value="delivery">Delivery</option></select></label><label>What was this for?<input name="description" maxlength="160" required placeholder="e.g. Wedding combo supplies for Ash"></label><label>Vendor / payee<input name="vendor" maxlength="120" placeholder="e.g. Gift supplier"></label><div id="purchaseAmountField"><label>Amount paid (₹)<input name="purchaseAmount" type="number" min="0.01" step="0.01" required placeholder="0"></label></div><div id="deliveryExpenseFields" hidden><label>Delivery method<select name="deliveryMode" id="deliveryMode"><option value="bike">Bike</option><option value="car">Car</option><option value="third_party">Third-party service</option></select></label><div id="mileageFields"><label>Distance travelled (km)<input name="distanceKm" id="distanceKm" type="number" min="0.1" step="0.1" placeholder="0"></label><p class="travel-calculation"><span id="travelRateLabel">—</span><b id="travelAmountPreview">₹ 0</b></p></div><div id="thirdPartyFields" hidden><label>Service<select name="deliveryProvider"><option value="Rapido">Rapido</option><option value="Porter">Porter</option><option value="Other">Other</option></select></label><label>Amount paid (₹)<input name="thirdPartyAmount" type="number" min="0.01" step="0.01" placeholder="0"></label></div></div><label>Note <input name="note" maxlength="240" placeholder="Optional context for the approver"></label><small>Bike and car claims use the shared fuel price and mileage rate. The resulting rate is saved with this claim.</small><button class="primary-btn" type="submit">Submit for approval</button></form></dialog>
+  <dialog id="clientDialog" class="contact-dialog"><form id="clientForm"><button type="button" class="close" id="closeClientDialog" aria-label="Close client editor">×</button><p class="section-label">CLIENT DIRECTORY</p><h2>Add a client</h2><label>Client name<input name="name" maxlength="120" required placeholder="e.g. Ashwini"></label><label>Mobile number<input name="mobileNumber" type="tel" inputmode="tel" maxlength="20" required placeholder="e.g. 98765 43210"></label><label>Delivery area<input name="deliveryArea" maxlength="160" placeholder="e.g. Kakkanad, Kochi"></label><small>Saving a quotation with this mobile number will keep these details updated.</small><button class="primary-btn" type="submit">Save client</button></form></dialog>
+  <dialog id="vendorDialog" class="contact-dialog"><form id="vendorForm"><button type="button" class="close" id="closeVendorDialog" aria-label="Close vendor editor">×</button><p class="section-label">VENDOR DIRECTORY</p><h2>Add a vendor</h2><label>Vendor name<input name="name" maxlength="120" required placeholder="e.g. Anjali Gift Supplies"></label><div class="form-columns"><label>Mobile number<input name="phone" type="tel" inputmode="tel" maxlength="20" placeholder="Optional"></label><label>Email<input name="email" type="email" maxlength="160" placeholder="Optional"></label></div><label>Location / address<input name="address" maxlength="240" placeholder="Optional"></label><label>Notes<textarea name="notes" maxlength="500" rows="3" placeholder="e.g. Good for quick restocks and custom packaging."></textarea></label><button class="primary-btn" type="submit">Save vendor</button></form></dialog>
+  <dialog id="orderDetailDialog" class="order-detail-dialog"><button type="button" class="close" id="closeOrderDetailDialog">×</button><div id="orderDetail"></div></dialog>
+  <dialog id="comboDetailDialog" class="combo-detail-dialog"><button type="button" class="close" id="closeComboDetailDialog" aria-label="Close combo details">×</button><div id="comboDetail"></div></dialog>
+  <dialog id="productDetailDialog" class="product-detail-dialog"><button type="button" class="close" id="closeProductDetailDialog" aria-label="Close product details">×</button><div id="productDetail"></div></dialog>
+
+  <section id="printCatalogue" class="print-only"></section>
+  <div id="databaseSaving" class="database-saving" role="status" aria-live="assertive" aria-atomic="true" hidden>
+    <div class="database-saving-card"><span class="database-spinner" aria-hidden="true"></span><span id="databaseSavingMessage">Saving changes…</span></div>
+  </div>
+  <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="vendor/jspdf.umd.min.js"></script>
+  <script src="supabase-config.js"></script>
+  <script src="app.js?v=53"></script>
+</body>
+</html>

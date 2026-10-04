@@ -1,0 +1,17 @@
+{
+  "name": "Meraki & Mirth Workspace",
+  "short_name": "Meraki & Mirth",
+  "description": "Private catalogue, inventory, and order workspace for Meraki & Mirth.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#fffdf9",
+  "theme_color": "#183b34",
+  "icons": [
+    {
+      "src": "assets/brand-logo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

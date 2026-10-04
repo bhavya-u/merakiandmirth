@@ -1,0 +1,23 @@
+# Local credentials and configuration
+.env
+.env.*
+*.pem
+*.key
+*.jks
+*.keystore
+
+# Dependencies and generated output
+node_modules/
+dist/
+*.apk
+*.aab
+*.log
+
+# Machine-specific files
+.DS_Store
+.idea/
+.vscode/
+
+# Local Supabase state
+supabase/.temp/
+supabase/.branches/

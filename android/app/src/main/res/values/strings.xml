@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Meraki &amp; Mirth</string>
+    <string name="title_activity_main">Meraki &amp; Mirth</string>
+    <string name="package_name">com.merakiandmirth.workspace</string>
+    <string name="custom_url_scheme">com.merakiandmirth.workspace</string>
+</resources>
