@@ -2,6 +2,10 @@
 
 The private workspace for managing products, combos, client catalogues, quotes, and orders. Business data is stored in Supabase; product images are served from the catalogue image paths stored with each product.
 
+## Isolated local development
+
+For testing without production access, follow [Local development](docs/local-development.md). Run `npm run local:serve` after starting and seeding local Supabase. This serves local configuration and blocks production connections.
+
 ## Run the web app
 
 ```bash

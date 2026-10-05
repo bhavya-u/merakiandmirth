@@ -21,3 +21,7 @@ dist/
 # Local Supabase state
 supabase/.temp/
 supabase/.branches/
+
+# Local development outputs and recovery snapshot
+.local/
+*.bundle
