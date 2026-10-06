@@ -21,3 +21,13 @@ Migration history records only image references, never restores whole product ro
 Local migration `202610060001` applied. Transactional test passed for apply, duplicate apply, stale-reference conflict, later-edit rollback conflict, rollback, duplicate rollback and client privilege denial. Test fixture changes were rolled back. History and URL changes commit atomically. Production untouched.
 
 Checkpoint 2 implementation is present: installer verifies variant response type/length, calls guarded RPC, writes external reference/history JSON and supports `--dry-run` and `--rollback <batch UUID>`. Dry run correctly reported zero changes for the already optimized local catalogue. End-to-end CLI test passed on p00001: dry-run with no writes, verified apply, external backup, rollback preview, rollback, duplicate rollback, reapply, conflict preserving a later edit (exit code 1), exported final history and unchanged prices/stock. Original fixture photo restored in cleanup. HEAD requests are time-bounded and reject redirects; partial apply exports history in a finally block.
+
+## Checkpoint 3 evidence — partial, device verification pending
+
+- Upload failure-injection tests passed against the app's actual upload function: failure before write, lost response after successful write, resuming remaining variants, no repeated completed uploads, stable resulting URL.
+- Native share bridge contract test passed: PDF written to CACHE and returned URI forwarded to Share. This uses simulated plugins and is not a device test.
+- Android sync and debug assembly passed with installed JDK 21. Filesystem and Share plugins included. No device was attached (`adb devices` empty), so real share-sheet and Android WebView decoding checks remain open. The generated debug APK uses the existing build configuration and was not installed or launched against production.
+- Saved two-page native catalogue layout fixture rendered and visually inspected: three-, six-, twelve-product layouts have visible images, readable labels and no overlapping/clipped content. This uses the actual app drawing functions with a Node image decoder and simulated share destination; browser print and Android sharing are separate paths.
+- Reproduce: `node --test tests/image-upload-recovery.test.mjs`; `node scripts/local/check-catalogue-pdf.mjs`; `pdftoppm -png .local/catalogue-layout-check.pdf .local/catalogue-layout-check` (PDF helper uses the existing Sharp dependency). The sample PDF is ignored local test output, not a customer document.
+
+Review: retain checkpoint 3 as incomplete until an Android test device is available. Production data unchanged. Database-fetching work can proceed independently, but production release remains gated on device verification.
