@@ -63,3 +63,16 @@ All existing migrations applied to the fresh local PostgreSQL instance. The seed
 ### Optimized image fixtures
 
 After seeding, run `npm run local:images` to generate and install the four image sizes in local Storage. Requires `cwebp` and macOS `sips`. Original images remain available. Previous database references are saved under ignored `.local/image-variants/rollback-*.json`. See [image performance results](image-performance-results.md) for measurements, verification and remaining release gates.
+
+### Image migration history and rollback
+
+Apply pending migrations to the isolated local stack with `node_modules/.bin/supabase migration up --local` (never use a linked project). Run `node scripts/local/test-image-migration.mjs` to test atomic image changes and conflict-safe rollback; its fixture changes roll back automatically.
+
+Preview: `node scripts/local/install-image-variants.mjs --dry-run`.
+Apply: `node scripts/local/install-image-variants.mjs`.
+Rollback preview: `node scripts/local/install-image-variants.mjs --rollback <batch-uuid> --dry-run`.
+Rollback: `node scripts/local/install-image-variants.mjs --rollback <batch-uuid>`.
+
+Rollback operates one product transaction at a time, reports conflicts and never restores prices or stock. Retain the external JSON backups and old Storage objects. An app user cannot invoke these service-role-only operations.
+
+Run `node scripts/local/test-image-migration-cli.mjs` for the command-level rollback/reapply test. It temporarily changes local fixture p00001, retains audit records, and restores its starting image. Do not edit that fixture concurrently. Use `--product <id>` on the installer to limit an apply/dry-run to one product. Rollback conflicts return exit code 1 and preserve later edits.
