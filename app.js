@@ -112,32 +112,66 @@ function syncOccasionLists() {
   studioProductFilter.value = studioProductOccasion;
 }
 
-async function hydrateFromSupabase() {
-  const [itemResult, orderResult, occasionResult, expenseResult, policyResult, peopleResult, clientResult, vendorResult] = await Promise.all([
-    db.from('library_items').select('id,kind,name,cost,buffer,rounded_price,contents,component_ids,occasions,photo,sku,stock_on_hand,reorder_level,supplier_name,lead_time_days,created_at').order('name'),
-    db.from('orders').select('id,client_id,code,title,event,qty,total,status,items,additional_costs,created_at,customer_name,customer_phone,delivery_area,special_request,complimentary,event_date,delivery_date,net_wrapping,net_wrapping_unit_price,thank_you_card_code,thank_you_card_style,thank_you_card_unit_price,thank_you_card_design_fee,discount_percent,discount_amount,subtotal_before_discount,quote_sent_at,cost_snapshot,expenses_total').order('created_at', { ascending: false }),
-    db.from('occasion_types').select('code,label,sort_order').eq('active', true).order('sort_order'),
-    db.from('expense_claims').select('*').order('created_at', { ascending: false }),
-    db.from('expense_rate_policies').select('delivery_mode,fuel_price_per_litre,kilometres_per_litre').eq('active', true),
-    db.rpc('workspace_expense_people'),
-    db.from('clients').select('id,name,mobile_number,delivery_area,created_at,updated_at').order('updated_at', { ascending: false }),
-    db.from('vendors').select('id,name,phone,email,address,notes,created_at,updated_at').order('name')
-  ]);
-  if (itemResult.error || orderResult.error || occasionResult.error || expenseResult.error || policyResult.error || peopleResult.error || clientResult.error || vendorResult.error) throw new Error(itemResult.error?.message || orderResult.error?.message || occasionResult.error?.message || expenseResult.error?.message || policyResult.error?.message || peopleResult.error?.message || clientResult.error?.message || vendorResult.error?.message);
-  occasionTypes = occasionResult.data.length ? occasionResult.data : defaultOccasionTypes;
-  products = itemResult.data.filter(row => row.kind === 'product').map(productFromRow);
-  combos = itemResult.data.filter(row => row.kind === 'combo').map(comboFromRow);
-  orders = orderResult.data.map(orderFromRow);
-  expenseClaims = expenseResult.data || [];
-  expensePolicies = policyResult.data || [];
-  expenseAdmins = peopleResult.data || [];
-  clients = clientResult.data || [];
-  vendors = vendorResult.data || [];
-  syncOccasionLists();
-  renderAll();
+const viewData = {
+  studio: ['items', 'occasions'], library: ['items', 'occasions', 'vendors'],
+  catalogues: ['items', 'occasions'], quotes: ['items', 'occasions', 'clients'],
+  orders: ['items', 'occasions', 'orders'], contacts: ['items', 'orders', 'clients', 'vendors'],
+  inventory: ['items'], expenses: ['expenses', 'policies', 'people']
+};
+let dataEpoch = 0;
+let rawOrderRows = [];
+let hydrationQueue = Promise.resolve();
+function hydrateFromSupabase(groups = Object.keys(dataQueries())) {
+  const epoch = dataEpoch;
+  const work = async () => {
+    if (epoch !== dataEpoch || !accessGranted) return;
+    const queries = dataQueries();
+    const selected = [...new Set(groups)];
+    const responses = await Promise.all(selected.map(async key => [key, await queries[key]()]));
+    if (epoch !== dataEpoch || !accessGranted) return;
+    const failure = responses.find(([, result]) => result.error);
+    if (failure) throw new Error(failure[1].error.message);
+    const results = Object.fromEntries(responses.map(([key, result]) => [key, result.data || []]));
+    if (results.occasions) occasionTypes = results.occasions.length ? results.occasions : defaultOccasionTypes;
+    if (results.items) {
+      products = results.items.filter(row => row.kind === 'product').map(productFromRow);
+      combos = results.items.filter(row => row.kind === 'combo').map(comboFromRow);
+    }
+    if (results.orders) rawOrderRows = results.orders;
+    if (results.orders || results.items) orders = rawOrderRows.map(orderFromRow);
+    if (results.expenses) expenseClaims = results.expenses;
+    if (results.policies) expensePolicies = results.policies;
+    if (results.people) expenseAdmins = results.people;
+    if (results.clients) clients = results.clients;
+    if (results.vendors) vendors = results.vendors;
+    syncOccasionLists();
+    renderAll();
+  };
+  // Serialize refreshes so an older read cannot overwrite a later edit's refresh.
+  const task = hydrationQueue.then(work, work);
+  hydrationQueue = task.catch(() => {});
+  return task;
+}
+function dataQueries() {
+  return {
+    items: () => db.from('library_items').select('id,kind,name,cost,buffer,rounded_price,contents,component_ids,occasions,photo,sku,stock_on_hand,reorder_level,supplier_name,lead_time_days,created_at').order('name'),
+    orders: () => db.from('orders').select('id,client_id,code,title,event,qty,total,status,items,additional_costs,created_at,customer_name,customer_phone,delivery_area,special_request,complimentary,event_date,delivery_date,net_wrapping,net_wrapping_unit_price,thank_you_card_code,thank_you_card_style,thank_you_card_unit_price,thank_you_card_design_fee,discount_percent,discount_amount,subtotal_before_discount,quote_sent_at,cost_snapshot,expenses_total').order('created_at', { ascending: false }),
+    occasions: () => db.from('occasion_types').select('code,label,sort_order').eq('active', true).order('sort_order'),
+    expenses: () => db.from('expense_claims').select('*').order('created_at', { ascending: false }),
+    policies: () => db.from('expense_rate_policies').select('delivery_mode,fuel_price_per_litre,kilometres_per_litre').eq('active', true),
+    people: () => db.rpc('workspace_expense_people'),
+    clients: () => db.from('clients').select('id,name,mobile_number,delivery_area,created_at,updated_at').order('updated_at', { ascending: false }),
+    vendors: () => db.from('vendors').select('id,name,phone,email,address,notes,created_at,updated_at').order('name'),
+  };
 }
 
 async function updateAccess(session) {
+  dataEpoch++;
+  navigationRequest++;
+  const accessEpoch = dataEpoch;
+  rawOrderRows = [];
+  products = []; combos = []; orders = []; clients = []; vendors = [];
+  expenseClaims = []; expensePolicies = []; expenseAdmins = [];
   user = session?.user || null;
   accessGranted = false;
   document.body.classList.remove('auth-pending', 'auth-blocked');
@@ -156,11 +190,12 @@ async function updateAccess(session) {
     return;
   }
   const { data, error } = await db.rpc('workspace_access_state');
+  if (accessEpoch !== dataEpoch) return;
   if (error) throw new Error(error.message);
   if (data.member) {
     accessGranted = true;
     $('#signedInAs').textContent = user.email || '';
-    await hydrateFromSupabase();
+    await hydrateFromSupabase(viewData[document.querySelector('.view.active')?.id] || viewData.studio);
     return;
   }
   document.body.classList.add('auth-blocked');
@@ -184,7 +219,13 @@ async function claimWorkspace() {
   await updateAccess((await db.auth.getSession()).data.session);
 }
 
-function navigate(view) {
+let navigationRequest = 0;
+async function navigate(view) {
+  if (!viewData[view] || !accessGranted) return;
+  const request = ++navigationRequest;
+  try { await hydrateFromSupabase(viewData[view]); }
+  catch (error) { notify(`Could not load this screen: ${error.message}`); return; }
+  if (request !== navigationRequest || !accessGranted) return;
   document.querySelectorAll('.nav,.view').forEach(node => node.classList.remove('active'));
   document.querySelectorAll(`.nav[data-view="${view}"]`).forEach(node => node.classList.add('active')); $(`#${view}`).classList.add('active');
   renderAll();
@@ -194,8 +235,8 @@ function setContactsTab(tab) { contactsTab = tab === 'vendors' ? 'vendors' : 'cl
 function renderContacts() { setContactsTab(contactsTab); $('#productSupplierOptions').innerHTML = vendors.map(vendor => `<option value="${escapeHtml(vendor.name)}"></option>`).join(''); const normalizedClientSearch = clientSearch.trim().toLowerCase(); const visibleClients = clients.filter(client => [client.name, client.mobile_number, client.delivery_area].some(value => String(value || '').toLowerCase().includes(normalizedClientSearch))); $('#clientSearch').value = clientSearch; $('#clientCount').textContent = `${visibleClients.length} client${visibleClients.length === 1 ? '' : 's'}`; $('#clientsTable').innerHTML = visibleClients.map(client => { const clientOrders = orders.filter(order => order.clientId === client.id || (!order.clientId && order.customerPhone === client.mobile_number)); const latest = clientOrders[0]; return `<tr><td><b>${escapeHtml(client.name)}</b><span>Added ${escapeHtml(formattedDate(String(client.created_at || '').slice(0, 10)) || 'recently')}</span></td><td>${escapeHtml(client.mobile_number)}</td><td>${escapeHtml(client.delivery_area || '—')}</td><td><strong>${clientOrders.length}</strong></td><td>${latest ? `<b>${escapeHtml(latest.title)}</b><span>${escapeHtml(latest.status)}</span>` : '—'}</td></tr>`; }).join(''); $('#clientsEmpty').hidden = visibleClients.length > 0; $('#clientsEmpty').textContent = clients.length ? 'No clients match this search.' : 'No clients yet. A client is added automatically when you save a quotation.'; const normalizedVendorSearch = vendorSearch.trim().toLowerCase(); const visibleVendors = vendors.filter(vendor => [vendor.name, vendor.phone, vendor.email, vendor.address].some(value => String(value || '').toLowerCase().includes(normalizedVendorSearch))); $('#vendorSearch').value = vendorSearch; $('#vendorCount').textContent = `${visibleVendors.length} vendor${visibleVendors.length === 1 ? '' : 's'}`; $('#vendorsTable').innerHTML = visibleVendors.map(vendor => { const supplied = products.filter(product => product.supplier.trim().toLowerCase() === vendor.name.trim().toLowerCase()); const contact = [vendor.phone, vendor.email].filter(Boolean).map(escapeHtml).join('<br>') || '—'; return `<tr><td><b>${escapeHtml(vendor.name)}</b>${vendor.notes ? `<span>${escapeHtml(vendor.notes)}</span>` : ''}</td><td>${contact}</td><td>${escapeHtml(vendor.address || '—')}</td><td>${supplied.length ? supplied.map(product => escapeHtml(product.name)).join(', ') : 'Not linked to a product yet'}</td><td><button class="soft-btn" data-vendor-edit="${vendor.id}">Edit</button></td></tr>`; }).join(''); $('#vendorsEmpty').hidden = visibleVendors.length > 0; $('#vendorsEmpty').textContent = vendors.length ? 'No vendors match this search.' : 'No vendors yet. Add a supplier here to keep their details ready for the next purchase.'; document.querySelectorAll('[data-vendor-edit]').forEach(button => button.onclick = () => openVendorDialog(vendors.find(vendor => vendor.id === button.dataset.vendorEdit))); }
 function openClientDialog() { if (!assertAccess()) return; const form = $('#clientForm'); form.reset(); $('#clientDialog').showModal(); }
 function openVendorDialog(vendor) { if (!assertAccess()) return; const form = $('#vendorForm'); form.reset(); form.dataset.vendorId = vendor?.id || ''; if (vendor) { form.elements.name.value = vendor.name; form.elements.phone.value = vendor.phone || ''; form.elements.email.value = vendor.email || ''; form.elements.address.value = vendor.address || ''; form.elements.notes.value = vendor.notes || ''; } $('#vendorDialog').showModal(); }
-async function saveClient(form) { if (!assertAccess()) return; const mobileNumber = form.elements.mobileNumber.value.replace(/\D/g, ''); if (!/^\d{7,15}$/.test(mobileNumber)) throw new Error('Enter a valid client mobile number.'); const { error } = await db.from('clients').upsert({ name: form.elements.name.value.trim(), mobile_number: mobileNumber, delivery_area: form.elements.deliveryArea.value.trim() }, { onConflict: 'mobile_number' }); if (error) throw error; $('#clientDialog').close(); await hydrateFromSupabase(); notify('Client saved to the shared directory.', 'success'); }
-async function saveVendor(form) { if (!assertAccess()) return; const payload = { owner_id: user.id, name: form.elements.name.value.trim(), phone: form.elements.phone.value.trim(), email: form.elements.email.value.trim().toLowerCase(), address: form.elements.address.value.trim(), notes: form.elements.notes.value.trim() }; const id = form.dataset.vendorId; const query = id ? db.from('vendors').update(payload).eq('id', id) : db.from('vendors').insert(payload); const { error } = await query; if (error) throw error; $('#vendorDialog').close(); await hydrateFromSupabase(); notify(id ? 'Vendor details updated.' : 'Vendor saved to the shared directory.', 'success'); }
+async function saveClient(form) { if (!assertAccess()) return; const mobileNumber = form.elements.mobileNumber.value.replace(/\D/g, ''); if (!/^\d{7,15}$/.test(mobileNumber)) throw new Error('Enter a valid client mobile number.'); const { error } = await db.from('clients').upsert({ name: form.elements.name.value.trim(), mobile_number: mobileNumber, delivery_area: form.elements.deliveryArea.value.trim() }, { onConflict: 'mobile_number' }); if (error) throw error; $('#clientDialog').close(); await hydrateFromSupabase(['clients']); notify('Client saved to the shared directory.', 'success'); }
+async function saveVendor(form) { if (!assertAccess()) return; const payload = { owner_id: user.id, name: form.elements.name.value.trim(), phone: form.elements.phone.value.trim(), email: form.elements.email.value.trim().toLowerCase(), address: form.elements.address.value.trim(), notes: form.elements.notes.value.trim() }; const id = form.dataset.vendorId; const query = id ? db.from('vendors').update(payload).eq('id', id) : db.from('vendors').insert(payload); const { error } = await query; if (error) throw error; $('#vendorDialog').close(); await hydrateFromSupabase(['vendors']); notify(id ? 'Vendor details updated.' : 'Vendor saved to the shared directory.', 'success'); }
 
 function renderPicker() {
   // The combo occasion is a label for the finished combo, not a restriction on
@@ -246,8 +287,8 @@ function savedThumbs(items) { return collage(items).replace('class="collage ', '
 function renderSavedCombos() { const occasion = $('#manageComboOccasion').value || 'all_combos'; const visible = occasion === 'all_combos' ? combos : combos.filter(combo => normalizeTag(combo.occasion) === occasion); $('#comboCount').textContent = visible.length ? `${visible.length} saved` : 'No saved combos'; $('#comboList').innerHTML = visible.map(combo => { const items = combo.productIds.map(id => products.find(product => product.id === id)).filter(Boolean); return `<article class="saved-combo"><div class="saved-combo-images">${savedThumbs(items)}</div><div><p>${escapeHtml(tagLabel(normalizeTag(combo.occasion)))}</p><h3>${escapeHtml(combo.name)}</h3><span>${items.length} products · ${money(liveComboRate(combo))}</span></div><div class="card-actions"><button data-view-combo="${escapeHtml(combo.id)}">View</button><button data-edit="${escapeHtml(combo.id)}">Edit</button><button data-delete="${escapeHtml(combo.id)}">Delete</button></div></article>`; }).join('') || '<p class="muted">No saved combos match this filter.</p>'; document.querySelectorAll('[data-view-combo]').forEach(button => button.onclick = () => openComboDetail(button.dataset.viewCombo)); document.querySelectorAll('[data-edit]').forEach(button => button.onclick = () => loadCombo(button.dataset.edit)); document.querySelectorAll('[data-delete]').forEach(button => button.onclick = () => deleteCombo(button.dataset.delete)); }
 function loadCombo(id) { const combo = combos.find(item => item.id === id); if (!combo) return; editingCombo = combo.id; selectedProducts = new Set(combo.productIds); $('#occasion').value = normalizeTag(combo.occasion); $('#comboName').value = combo.name; $('#marginRange').value = [10, 15, 20, 25, 30, 35, 40, 45, 50].includes(Number(combo.margin)) ? combo.margin : 30; setStudioTab('design'); renderStudio(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
 function clearCombo() { editingCombo = null; selectedProducts = new Set(); $('#comboName').value = ''; $('#marginRange').value = 30; renderStudio(); }
-async function saveCombo() { if (!assertAccess()) return; const draft = comboDraft(); if (!draft.occasion || !draft.name || !draft.rate || !draft.productIds.length) return notify('Add an occasion, combo name, rate, and at least one product.'); const isEditing = Boolean(editingCombo); const saveButton = $('#saveCombo'); saveButton.disabled = true; saveButton.textContent = 'Saving…'; try { const { error } = await db.from('library_items').upsert({ id: draft.id, owner_id: user.id, kind: 'combo', name: draft.name, cost: draft.rate, contents: JSON.stringify({ margin: draft.margin, componentCost: draft.cost }), component_ids: draft.productIds, occasions: [draft.occasion], photo: '' }); if (error) return notify(error.message); editingCombo = draft.id; await hydrateFromSupabase(); notify(isEditing ? 'Combo updated' : 'Combo saved', 'success'); } finally { saveButton.disabled = false; saveButton.textContent = 'Save combo'; } }
-async function deleteCombo(id) { if (!assertAccess() || !confirm('Delete this combo?')) return; const { error } = await db.from('library_items').delete().eq('id', id); if (error) return notify(error.message); if (editingCombo === id) clearCombo(); await hydrateFromSupabase(); }
+async function saveCombo() { if (!assertAccess()) return; const draft = comboDraft(); if (!draft.occasion || !draft.name || !draft.rate || !draft.productIds.length) return notify('Add an occasion, combo name, rate, and at least one product.'); const isEditing = Boolean(editingCombo); const saveButton = $('#saveCombo'); saveButton.disabled = true; saveButton.textContent = 'Saving…'; try { const { error } = await db.from('library_items').upsert({ id: draft.id, owner_id: user.id, kind: 'combo', name: draft.name, cost: draft.rate, contents: JSON.stringify({ margin: draft.margin, componentCost: draft.cost }), component_ids: draft.productIds, occasions: [draft.occasion], photo: '' }); if (error) return notify(error.message); editingCombo = draft.id; await hydrateFromSupabase(['items']); notify(isEditing ? 'Combo updated' : 'Combo saved', 'success'); } finally { saveButton.disabled = false; saveButton.textContent = 'Save combo'; } }
+async function deleteCombo(id) { if (!assertAccess() || !confirm('Delete this combo?')) return; const { error } = await db.from('library_items').delete().eq('id', id); if (error) return notify(error.message); if (editingCombo === id) clearCombo(); await hydrateFromSupabase(['items']); }
 function openComboDetail(id) { const combo = combos.find(item => item.id === id); if (!combo) return notify('This saved combo is no longer available.'); const items = combo.productIds.map(productId => products.find(product => product.id === productId)).filter(Boolean); $('#comboDetail').innerHTML = `<p class="section-label">SAVED COMBO</p><h2>${escapeHtml(combo.name)}</h2><p class="combo-detail-occasion">${escapeHtml(tagLabel(normalizeTag(combo.occasion)))}</p><div class="combo-detail-summary"><div><span>Product cost</span><b>${money(comboCost(combo.productIds))}</b></div><div><span>Margin</span><b>${Number(combo.margin || 0)}%</b></div><div><span>Final price</span><b>${money(liveComboRate(combo))}</b></div></div><section class="combo-detail-products"><p class="section-label">WHAT’S INCLUDED</p>${items.length ? `<div class="combo-detail-product-grid">${items.map(product => `<article><div>${imageMarkup(product, 'combo-detail-product-image')}</div><b>${escapeHtml(product.name)}</b><span>${money(product.rate)}</span></article>`).join('')}</div>` : '<p class="muted">The products in this saved combo are no longer available.</p>'}</section>`; $('#comboDetailDialog').showModal(); }
 function productStockStatus(product) { if (product.stockOnHand <= 0) return 'Out of stock'; if (product.stockOnHand <= product.reorderLevel) return 'Low stock'; return 'In stock'; }
 function openProductDetail(product) { if (!product) return notify('This product is no longer available.'); const stockStatus = productStockStatus(product); const units = count => `${count} unit${Number(count) === 1 ? '' : 's'}`; $('#productDetail').innerHTML = `<div class="product-detail-layout"><div class="product-detail-image">${imageMarkup(product, 'product-detail-photo')}</div><div class="product-detail-copy"><p class="section-label">PRODUCT DETAIL</p><h2>${escapeHtml(product.name)}</h2><p class="product-detail-sku">PRODUCT ID · ${escapeHtml(product.sku)}</p><div class="product-detail-price"><span>Final product price</span><strong>${money(product.rate)}</strong></div></div></div><div class="product-detail-grid"><div><span>Product cost</span><b>${money(product.baseCost)}</b></div><div><span>Buffer</span><b>${money(product.buffer)}</b></div><div><span>In inventory</span><b>${units(product.stockOnHand)}</b></div><div><span>Stock status</span><b class="product-stock-${stockStatus === 'In stock' ? 'good' : stockStatus === 'Low stock' ? 'low' : 'out'}">${stockStatus}</b></div><div><span>Reorder at</span><b>${units(product.reorderLevel)}</b></div><div><span>Supplier lead time</span><b>${product.leadTimeDays ? `${product.leadTimeDays} day${product.leadTimeDays === 1 ? '' : 's'}` : 'Not set'}</b></div></div><section class="product-detail-section"><span>Vendor</span><b>${escapeHtml(product.supplier || 'Not set')}</b></section><section class="product-detail-section"><span>Suitable occasions</span><p>${escapeHtml(product.events.map(tagLabel).join(' · '))}</p></section><p class="product-detail-added">${product.createdAt ? `Added ${escapeHtml(formattedDate(String(product.createdAt).slice(0, 10)))}` : 'Added date not available for this product.'}</p>`; $('#productDetailDialog').showModal(); }
@@ -263,9 +304,9 @@ function renderOccasionManager() {
   document.querySelectorAll('[data-occasion-save]').forEach(button => button.onclick = async () => { const code = button.dataset.occasionSave; const label = document.querySelector(`[data-occasion-label="${CSS.escape(code)}"]`).value.trim(); try { await renameOccasion(code, label); } catch (error) { notify(error.message || 'Could not update occasion.'); } });
   document.querySelectorAll('[data-occasion-delete]').forEach(button => button.onclick = async () => { const code = button.dataset.occasionDelete; const select = document.querySelector(`[data-occasion-replacement="${CSS.escape(code)}"]`); const target = select.value; if (target === code) return notify('Choose a different replacement occasion before removing this one.'); if (!confirm(`Remove ${tagLabel(code)}? Existing product and combo tags will move to ${tagLabel(target)}.`)) return; try { await removeOccasion(code, target); } catch (error) { notify(error.message || 'Could not remove occasion.'); } });
 }
-async function createOccasion(label) { if (!label) throw new Error('Enter an occasion name.'); const { error } = await db.rpc('create_workspace_occasion', { p_label: label }); if (error) throw error; await hydrateFromSupabase(); renderOccasionManager(); notify('Occasion added to the shared library.', 'success'); }
-async function renameOccasion(code, label) { if (!label) throw new Error('Enter an occasion name.'); const { error } = await db.rpc('rename_workspace_occasion', { p_code: code, p_label: label }); if (error) throw error; await hydrateFromSupabase(); renderOccasionManager(); notify('Occasion name updated everywhere.', 'success'); }
-async function removeOccasion(code, replacementCode) { const { error } = await db.rpc('remove_workspace_occasion', { p_code: code, p_replacement_code: replacementCode }); if (error) throw error; await hydrateFromSupabase(); renderOccasionManager(); notify('Occasion removed and existing tags reassigned.', 'success'); }
+async function createOccasion(label) { if (!label) throw new Error('Enter an occasion name.'); const { error } = await db.rpc('create_workspace_occasion', { p_label: label }); if (error) throw error; await hydrateFromSupabase(['occasions']); renderOccasionManager(); notify('Occasion added to the shared library.', 'success'); }
+async function renameOccasion(code, label) { if (!label) throw new Error('Enter an occasion name.'); const { error } = await db.rpc('rename_workspace_occasion', { p_code: code, p_label: label }); if (error) throw error; await hydrateFromSupabase(['occasions']); renderOccasionManager(); notify('Occasion name updated everywhere.', 'success'); }
+async function removeOccasion(code, replacementCode) { const { error } = await db.rpc('remove_workspace_occasion', { p_code: code, p_replacement_code: replacementCode }); if (error) throw error; await hydrateFromSupabase(['occasions', 'items', 'orders']); renderOccasionManager(); notify('Occasion removed and existing tags reassigned.', 'success'); }
 function syncProductRoundedPrice() { const form = $('#productForm'); if (!form) return; $('#productRoundedPrice').value = money(roundedProductPrice(form.elements.rate.value, form.elements.buffer.value)); }
 function syncProductBufferDefault() { const form = $('#productForm'); if (!form) return; if (form.dataset.bufferManuallyEdited !== 'true') { const cost = Math.max(0, Number(form.elements.rate.value || 0)); form.elements.buffer.value = cost ? (Math.round(cost * 8) / 100).toFixed(2) : ''; } syncProductRoundedPrice(); }
 function openProductDialog(product) { if (!assertAccess()) return; editingProduct = product?.id || null; const form = $('#productForm'); form.reset(); form.dataset.draftProductId = product?.id || `product-${uuid()}`; form.dataset.bufferManuallyEdited = product ? 'true' : 'false'; $('#eventTagChoices').innerHTML = tableOccasions().map(tag => `<label><input type="checkbox" name="events" value="${tag}"${(product?.events || []).includes(tag) ? ' checked' : ''}>${tagLabel(tag)}</label>`).join(''); $('#dialogLabel').textContent = product ? 'EDIT PRODUCT' : 'NEW PRODUCT'; $('#dialogTitle').textContent = product ? 'Edit product' : 'Add a product'; if (product) { form.elements.name.value = product.name; form.elements.rate.value = product.baseCost || ''; form.elements.buffer.value = product.buffer || 0; form.elements.supplier.value = product.supplier || ''; form.elements.reorderLevel.value = product.reorderLevel || 0; form.elements.leadTimeDays.value = product.leadTimeDays || 0; } syncProductRoundedPrice(); $('#productDialog').showModal(); }
@@ -311,7 +352,7 @@ async function saveProduct(form) {
         if (vendorError) throw vendorError;
       }
       $('#productDialog').close();
-      await hydrateFromSupabase();
+      await hydrateFromSupabase(['items', 'vendors']);
       notify(imageFile ? 'Product and image saved to the shared catalogue.' : 'Product saved to the shared catalogue.', 'success');
     });
   } finally {
@@ -319,7 +360,7 @@ async function saveProduct(form) {
     if (submitButton) { submitButton.disabled = false; submitButton.classList.remove('is-loading'); submitButton.removeAttribute('aria-busy'); submitButton.textContent = buttonLabel; }
   }
 }
-async function deleteProduct(id) { if (!assertAccess() || !confirm('Delete this product?')) return; const revisedCombos = combos.map(combo => ({ ...combo, productIds: combo.productIds.filter(productId => productId !== id) })); const { error: comboError } = await db.from('library_items').upsert(revisedCombos.map(combo => ({ id: combo.id, owner_id: user.id, kind: 'combo', name: combo.name, cost: liveComboRate(combo), contents: JSON.stringify({ margin: combo.margin }), component_ids: combo.productIds, occasions: [combo.occasion], photo: '' }))); if (comboError) return notify(comboError.message); const { error } = await db.from('library_items').delete().eq('id', id); if (error) return notify(error.message); await hydrateFromSupabase(); }
+async function deleteProduct(id) { if (!assertAccess() || !confirm('Delete this product?')) return; const revisedCombos = combos.map(combo => ({ ...combo, productIds: combo.productIds.filter(productId => productId !== id) })); const { error: comboError } = await db.from('library_items').upsert(revisedCombos.map(combo => ({ id: combo.id, owner_id: user.id, kind: 'combo', name: combo.name, cost: liveComboRate(combo), contents: JSON.stringify({ margin: combo.margin }), component_ids: combo.productIds, occasions: [combo.occasion], photo: '' }))); if (comboError) return notify(comboError.message); const { error } = await db.from('library_items').delete().eq('id', id); if (error) return notify(error.message); await hydrateFromSupabase(['items']); }
 
 function renderCatalogueChoices() { const occasion = $('#catalogueOccasion').value || 'all_combos'; const visible = occasion === 'all_combos' ? combos : combos.filter(combo => normalizeTag(combo.occasion) === occasion); $('#catalogueComboList').innerHTML = visible.map(combo => { const items = combo.productIds.map(id => products.find(product => product.id === id)).filter(Boolean); return `<label class="catalogue-choice"><input type="checkbox" value="${combo.id}" ${selectedExportCombos.has(combo.id) ? 'checked' : ''}><div>${collage(items)}<div><p>${escapeHtml(tagLabel(normalizeTag(combo.occasion)))}</p><h3>${escapeHtml(combo.name)}</h3><span>${items.length} products · ${money(liveComboRate(combo))} per combo</span></div></div></label>`; }).join(''); $('#catalogueEmpty').hidden = visible.length > 0; $('#catalogueEmpty').textContent = occasion === 'all_combos' ? 'No saved catalogues yet. Create a combo in Studio first.' : 'No saved catalogues match this occasion.'; document.querySelectorAll('.catalogue-choice input').forEach(input => input.onchange = () => { if (input.checked && !selectedExportCombos.has(input.value) && selectedExportCombos.size >= 6) { input.checked = false; return notify('A catalogue can include up to six combos.'); } input.checked ? selectedExportCombos.add(input.value) : selectedExportCombos.delete(input.value); }); }
 function comboProducts(combo) { return combo.productIds.map(id => products.find(product => product.id === id)).filter(Boolean); }
@@ -622,7 +663,7 @@ async function exportQuote() {
   $('#printCatalogue').innerHTML = `<section class="print-catalogue-sheet print-quote-sheet"><header><img src="assets/meraki-mirth-logo-original.png" alt="Meraki &amp; Mirth"><div><p>YOUR CELEBRATION QUOTE</p><h1>${escapeHtml(quote.title)}</h1><span>Prepared with warmth by Meraki &amp; Mirth</span></div></header><div class="print-quote-body"><div class="print-quote-message"><p>${escapeHtml(quoteThankYou(quote))}</p><strong>${escapeHtml(quote.combo.name)}</strong><span>${escapeHtml(tagLabel(normalizeTag(quote.combo.occasion)))}</span>${eventDetails ? `<aside><b>Celebration schedule</b><p>${escapeHtml(eventDetails)}</p></aside>` : ''}${deliveryDetails ? `<aside><b>Delivery details</b><p>${escapeHtml(deliveryDetails)}</p></aside>` : ''}${quote.complimentary || quote.specialRequest ? `<aside><b>Thoughtful details</b><p>${quote.complimentary ? `${escapeHtml(quote.complimentary)} ` : ''}${quote.specialRequest ? `Client request: ${escapeHtml(quote.specialRequest)}` : ''}</p></aside>` : ''}</div><section class="print-quote-products${items.length > COMBO_COLLAGE_PRODUCTS ? ' expanded-products' : ''}"><span>YOUR THOUGHTFULLY CURATED SET</span><div>${productStrip}</div></section><section class="print-quote-inclusions"><span>WHAT’S INSIDE YOUR CURATED SET</span><ul class="${inclusions.length > COMBO_COLLAGE_PRODUCTS ? 'many-inclusions' : ''}">${inclusions.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></section><div class="print-quote-total"><span>Price per curated set</span><b>${money(quote.price)}</b><span>Curated sets</span><b>${quote.quantity}</b>${quote.discountAmount ? `<span>${quote.discountPercent}% discount</span><b>− ${money(quote.discountAmount)}</b>` : ''}<strong>Celebration total <b>${money(quote.total)}</b></strong></div><p class="print-quote-fulfilment"><b>Collection &amp; delivery</b>${escapeHtml(fulfilmentNote)}</p></div><footer><span>✿</span> MERAKI &amp; MIRTH <em>For the moments worth thanking.</em></footer></section>`;
   printWithFilename(pdfExportFilename('Quote', quote.clientName, quote.title));
 }
-async function saveOrder() { if (!assertAccess()) return; const quote = quoteValues(); if (!quote.combo) return notify('Choose a saved combo before saving a quotation.'); if (!quote.clientName) return notify('Add the client name before saving this quotation.'); if (!/^\d{7,15}$/.test(quote.clientMobile)) return notify('Add a valid client mobile number before saving this quotation.'); const { data: client, error: clientError } = await db.from('clients').upsert({ name: quote.clientName, mobile_number: quote.clientMobile, delivery_area: quote.deliveryArea }, { onConflict: 'mobile_number' }).select('id').single(); if (clientError) return notify(clientError.message); const code = `MAM-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${Math.floor(Math.random() * 900 + 100)}`; const { data, error } = await db.from('orders').insert({ owner_id: user.id, client_id: client.id, code, title: quote.title, event: quote.combo.occasion, qty: quote.quantity, total: quote.total, status: 'Quotation sent', customer_name: quote.clientName, customer_phone: quote.clientMobile, delivery_area: quote.deliveryArea, special_request: quote.specialRequest, complimentary: quote.complimentary, event_date: quote.eventDate || null, delivery_date: quote.deliveryDate || null, net_wrapping: quote.netWrapping, net_wrapping_unit_price: quote.netWrappingUnitPrice, additional_costs: quote.additionalCosts, discount_percent: quote.discountPercent, discount_amount: quote.discountAmount, subtotal_before_discount: quote.subtotal, quote_sent_at: new Date().toISOString(), cost_snapshot: quote.cost * quote.quantity, items: [{ comboId: quote.combo.id, comboName: quote.combo.name, margin: quote.margin, pricePerCombo: quote.price, unitCost: quote.cost, clientMobile: quote.clientMobile, deliveryArea: quote.deliveryArea, eventDate: quote.eventDate, deliveryDate: quote.deliveryDate, netWrapping: quote.netWrapping, netWrappingUnitPrice: quote.netWrappingUnitPrice, netWrappingTotal: quote.netWrappingTotal, additionalCosts: quote.additionalCosts, additionalCostTotal: quote.additionalCostTotal, complimentary: quote.complimentary, discountPercent: quote.discountPercent, discountAmount: quote.discountAmount, subtotalBeforeDiscount: quote.subtotal }] }).select('id').single(); if (error) return notify(error.message); if (data?.id) { const { error: comboLinkError } = await db.from('orders').update({ combo_id: quote.combo.id }).eq('id', data.id); if (comboLinkError) return notify(comboLinkError.message); } void dispatchTelegramNotifications(); await hydrateFromSupabase(); notify('Quotation saved in the celebration workboard.', 'success'); navigate('orders'); if (data?.id) openOrderDetail(data.id); }
+async function saveOrder() { if (!assertAccess()) return; const quote = quoteValues(); if (!quote.combo) return notify('Choose a saved combo before saving a quotation.'); if (!quote.clientName) return notify('Add the client name before saving this quotation.'); if (!/^\d{7,15}$/.test(quote.clientMobile)) return notify('Add a valid client mobile number before saving this quotation.'); const { data: client, error: clientError } = await db.from('clients').upsert({ name: quote.clientName, mobile_number: quote.clientMobile, delivery_area: quote.deliveryArea }, { onConflict: 'mobile_number' }).select('id').single(); if (clientError) return notify(clientError.message); const code = `MAM-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${Math.floor(Math.random() * 900 + 100)}`; const { data, error } = await db.from('orders').insert({ owner_id: user.id, client_id: client.id, code, title: quote.title, event: quote.combo.occasion, qty: quote.quantity, total: quote.total, status: 'Quotation sent', customer_name: quote.clientName, customer_phone: quote.clientMobile, delivery_area: quote.deliveryArea, special_request: quote.specialRequest, complimentary: quote.complimentary, event_date: quote.eventDate || null, delivery_date: quote.deliveryDate || null, net_wrapping: quote.netWrapping, net_wrapping_unit_price: quote.netWrappingUnitPrice, additional_costs: quote.additionalCosts, discount_percent: quote.discountPercent, discount_amount: quote.discountAmount, subtotal_before_discount: quote.subtotal, quote_sent_at: new Date().toISOString(), cost_snapshot: quote.cost * quote.quantity, items: [{ comboId: quote.combo.id, comboName: quote.combo.name, margin: quote.margin, pricePerCombo: quote.price, unitCost: quote.cost, clientMobile: quote.clientMobile, deliveryArea: quote.deliveryArea, eventDate: quote.eventDate, deliveryDate: quote.deliveryDate, netWrapping: quote.netWrapping, netWrappingUnitPrice: quote.netWrappingUnitPrice, netWrappingTotal: quote.netWrappingTotal, additionalCosts: quote.additionalCosts, additionalCostTotal: quote.additionalCostTotal, complimentary: quote.complimentary, discountPercent: quote.discountPercent, discountAmount: quote.discountAmount, subtotalBeforeDiscount: quote.subtotal }] }).select('id').single(); if (error) return notify(error.message); if (data?.id) { const { error: comboLinkError } = await db.from('orders').update({ combo_id: quote.combo.id }).eq('id', data.id); if (comboLinkError) return notify(comboLinkError.message); } void dispatchTelegramNotifications(); await hydrateFromSupabase(['orders', 'clients']); notify('Quotation saved in the celebration workboard.', 'success'); await navigate('orders'); if (data?.id) openOrderDetail(data.id); }
 
 async function exportQuoteNativeEnhanced(quote) {
   const { jsPDF } = window.jspdf || {};
@@ -700,9 +741,9 @@ function addOrderInternalCosts(order) { if (!order.additionalCosts?.length) retu
 renderOrderDetail = function renderOrderDetailWithComboLink(order) { baseRenderOrderDetail(order); addOrderComboLink(order); addOrderInternalCosts(order); };
 function openOrderDetail(id) { const order = orders.find(item => item.id === id); if (!order) return; openOrderId = id; renderOrderDetail(order); $('#orderDetailDialog').showModal(); }
 function renderOrders() { const currentYear = currentYearDateRange(); if (!ordersFrom || !ordersTo) { ordersFrom = currentYear.from; ordersTo = currentYear.to; } $('#ordersFrom').value = ordersFrom; $('#ordersTo').value = ordersTo; const thisYearActive = ordersFrom === currentYear.from && ordersTo === currentYear.to; $('#ordersThisYear').textContent = thisYearActive ? 'This year · active' : 'This year'; $('#ordersThisYear').setAttribute('aria-pressed', String(thisYearActive)); const visible = filteredOrders(); const delivered = visible.filter(order => ['Delivered', 'Full amount paid', 'Closed'].includes(order.status)).length; const packing = visible.filter(order => ['Packaging', 'Ready for dispatch'].includes(order.status)).length; const converted = visible.filter(order => ['Confirmed', 'Advance paid', 'Procurement', 'Packaging', 'Ready for dispatch', 'Out for delivery', 'Delivered', 'Full amount paid', 'Closed'].includes(order.status)).length; const qualifying = visible.filter(order => !['Lost', 'Dropped'].includes(order.status)).length; $('#ordersCount').textContent = visible.length; $('#ordersPacking').textContent = packing; $('#ordersDelivered').textContent = delivered; $('#ordersConversion').textContent = qualifying ? `${Math.round((converted / qualifying) * 100)}%` : '0%'; $('#ordersProfit').textContent = money(visible.reduce((total, order) => total + (order.profitRealised ? order.profit : 0), 0)); $('#ordersList').innerHTML = visible.map(order => `<article class="order-row"><div><p>${escapeHtml(order.status)}</p><h3>${escapeHtml(order.title)}</h3><span>${escapeHtml(order.customerName || order.comboName)} · ${escapeHtml(order.code)} · ${escapeHtml(order.created)}</span></div><div><span>Quote total</span><b>${money(order.total)}</b></div><div><span>Realised profit</span><b>${order.profitRealised ? money(order.profit) : 'Pending'}</b></div><div class="order-actions"><span>${order.quantity} curated sets${order.eventDate ? ` · Event ${escapeHtml(formattedDate(order.eventDate))}` : ''}${order.deliveryDate ? ` · Delivery ${escapeHtml(formattedDate(order.deliveryDate))}` : ''}</span><button data-order-view="${order.id}" class="soft-btn">View details</button></div></article>`).join(''); $('#ordersEmpty').hidden = visible.length > 0; document.querySelectorAll('[data-order-view]').forEach(button => button.onclick = () => openOrderDetail(button.dataset.orderView)); if (openOrderId && $('#orderDetailDialog').open) { const openOrder = orders.find(order => order.id === openOrderId); if (openOrder) renderOrderDetail(openOrder); } }
-async function updateOrderStatus(id, status) { const { error } = await db.from('orders').update({ status }).eq('id', id); if (error) return notify(error.message); void dispatchTelegramNotifications(); await hydrateFromSupabase(); }
-async function updateOrderDeliveryDate(id, deliveryDate) { const { error } = await db.from('orders').update({ delivery_date: deliveryDate || null }).eq('id', id); if (error) return notify(error.message); await hydrateFromSupabase(); }
-async function deleteOrder(id) { if (!confirm('Remove this order?')) return; const { error } = await db.from('orders').delete().eq('id', id); if (error) return notify(error.message); await hydrateFromSupabase(); }
+async function updateOrderStatus(id, status) { const { error } = await db.from('orders').update({ status }).eq('id', id); if (error) return notify(error.message); void dispatchTelegramNotifications(); await hydrateFromSupabase(['orders', 'items']); }
+async function updateOrderDeliveryDate(id, deliveryDate) { const { error } = await db.from('orders').update({ delivery_date: deliveryDate || null }).eq('id', id); if (error) return notify(error.message); await hydrateFromSupabase(['orders']); }
+async function deleteOrder(id) { if (!confirm('Remove this order?')) return; const { error } = await db.from('orders').delete().eq('id', id); if (error) return notify(error.message); await hydrateFromSupabase(['orders', 'items']); }
 
 function inventoryHealth(product) { if (product.stockOnHand <= 0) return { key: 'out', label: 'Out of stock' }; if (product.reorderLevel > 0 && product.stockOnHand <= product.reorderLevel) return { key: 'low', label: 'Low stock' }; return { key: 'in', label: 'In stock' }; }
 function renderInventory() {
@@ -765,7 +806,7 @@ async function saveInventory(form) {
   ]);
   if (stockError || productError) throw new Error(stockError?.message || productError?.message);
   $('#inventoryDialog').close();
-  await hydrateFromSupabase();
+  await hydrateFromSupabase(['items']);
 }
 
 function expensePolicy(mode) { return expensePolicies.find(policy => policy.delivery_mode === mode); }
@@ -824,17 +865,17 @@ async function saveExpense(form) {
   const distance = expenseType === 'delivery' && deliveryMode !== 'third_party' ? Number(form.elements.distanceKm.value) : null;
   const { error } = await db.rpc('submit_expense_claim', { p_expense_type: expenseType, p_description: form.elements.description.value.trim(), p_vendor: form.elements.vendor.value.trim(), p_delivery_mode: deliveryMode, p_delivery_provider: deliveryMode === 'third_party' ? form.elements.deliveryProvider.value : '', p_distance_km: distance, p_amount: amount, p_note: form.elements.note.value.trim() });
   if (error) throw error;
-  $('#expenseDialog').close(); await hydrateFromSupabase(); notify('Expense submitted for independent approval.', 'success');
+  $('#expenseDialog').close(); await hydrateFromSupabase(['expenses']); notify('Expense submitted for independent approval.', 'success');
 }
 async function reviewExpense(id, action) {
   if (action === 'rejected' && !confirm('Reject this expense claim?')) return;
   const { error } = await db.rpc('review_expense_claim', { p_claim_id: id, p_action: action, p_note: '' });
-  if (error) return notify(error.message); await hydrateFromSupabase();
+  if (error) return notify(error.message); await hydrateFromSupabase(['expenses']);
 }
 async function settleExpense(id) {
   if (!confirm('Mark this approved expense as settled?')) return;
   const { error } = await db.rpc('settle_expense_claim', { p_claim_id: id, p_note: '' });
-  if (error) return notify(error.message); await hydrateFromSupabase();
+  if (error) return notify(error.message); await hydrateFromSupabase(['expenses']);
 }
 
 function renderAll() { renderStudio(); renderLibrary(); renderCatalogueChoices(); renderQuotes(); renderContacts(); renderInventory(); renderExpenses(); renderOrders(); }

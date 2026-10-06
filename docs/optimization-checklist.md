@@ -6,7 +6,7 @@ Work proceeds in this order on the feature branch. Production rollout follows lo
 - [x] 1. Add private image migration history with atomic conditional apply/rollback; test conflicts, retries and access restrictions locally.
 - [x] 2. Integrate the local migration tool with history, verified uploads, external JSON backups and a dry-run/rollback command. Preserve old objects.
 - [ ] 3. Complete image release checks: interrupted uploads, saved PDF visual inspection and Android sharing.
-- [ ] 4. Map screen data dependencies; replace whole-workspace reloads with screen-specific queries and targeted invalidation. Verify fresh data after edits and navigation.
+- [x] 4. Map screen data dependencies; replace whole-workspace reloads with screen-specific queries and targeted invalidation. Verify fresh data after edits and navigation.
 - [ ] 5. Add pagination and explicit field selection to growing lists; preserve searches, totals, exports and sorting semantics.
 - [ ] 6. Deduplicate in-flight reads and bound retries; cancel obsolete requests and handle quota restrictions without retry loops.
 - [ ] 7. Add usage review procedure for cached/uncached egress separately, monthly projections and proposed 2.5 GB/category operating target. Do not represent alerts as spending caps.
@@ -31,3 +31,11 @@ Checkpoint 2 implementation is present: installer verifies variant response type
 - Reproduce: `node --test tests/image-upload-recovery.test.mjs`; `node scripts/local/check-catalogue-pdf.mjs`; `pdftoppm -png .local/catalogue-layout-check.pdf .local/catalogue-layout-check` (PDF helper uses the existing Sharp dependency). The sample PDF is ignored local test output, not a customer document.
 
 Review: retain checkpoint 3 as incomplete until an Android test device is available. Production data unchanged. Database-fetching work can proceed independently, but production release remains gated on device verification.
+
+## Checkpoint 4 evidence
+
+Screen dependency map and targeted refreshes implemented. Studio/catalogues read items + occasions; library also reads vendors; quotes also reads clients; orders reads items + occasions + orders; contacts reads items + orders + clients + vendors; inventory reads items; expenses reads claims + policies + approvers. Studio startup now requests two datasets rather than eight (access/session calls excluded).
+
+Writes refresh only affected datasets, with items included for order status/deletion to account for stock effects. Cached raw order rows are remapped when catalogue items change. Screen navigation deliberately refreshes dependencies for freshness; it is not yet a persistent query cache and can add requests compared with the previous zero-read navigation. Request reuse is checkpoint 6.
+
+Tests passed for query selection, preserving unrelated state, all-or-nothing response publication, recovery after failure and suppressing queued reads from a previous auth epoch. Refreshes serialize to avoid older results overwriting newer refreshes. Account transitions clear in-memory data and reject obsolete access responses. Local browser smoke checks passed for 88 Studio products, one order, expense approvers and client order counts with no console errors. Static web build and syntax checks passed. Mutation refresh mappings reviewed; exhaustive UI mutation regressions remain part of release testing. Production unchanged.
