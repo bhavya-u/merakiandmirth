@@ -59,3 +59,7 @@ The Homebrew CLI installed initially (2.119.0) could not start with the old link
 ## Verification completed on October 5, 2026
 
 All existing migrations applied to the fresh local PostgreSQL instance. The seed was run twice and integration checks passed: member and outsider login/access rules, all workspace table queries, 88 local WebP objects, authenticated upload/delete, denied anonymous/non-member uploads, zero cron jobs/Vault secrets/hosted image references, local-only frontend config, CSP, and denial of access to private files through the dev server. Browser sign-in persisted across reload; all 91 image elements in the active Studio view decoded from local URLs. Full Android/device and hosted-CDN tests are still pending.
+
+### Optimized image fixtures
+
+After seeding, run `npm run local:images` to generate and install the four image sizes in local Storage. Requires `cwebp` and macOS `sips`. Original images remain available. Previous database references are saved under ignored `.local/image-variants/rollback-*.json`. See [image performance results](image-performance-results.md) for measurements, verification and remaining release gates.

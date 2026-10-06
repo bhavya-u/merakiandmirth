@@ -6,6 +6,7 @@ const output = resolve(root, 'dist');
 const files = [
   'index.html',
   'app.js',
+  'product-images.js',
   'styles.css',
   'supabase-config.js',
   'manifest.webmanifest'

@@ -15,7 +15,9 @@
     "local:stop": "SUPABASE_TELEMETRY_DISABLED=1 supabase stop",
     "local:seed": "node scripts/local/seed.mjs",
     "local:serve": "node scripts/local/serve.mjs",
-    "local:test": "node scripts/local/test.mjs"
+    "local:test": "node scripts/local/test.mjs",
+    "images:test": "node --test tests/product-images.test.mjs",
+    "local:images": "node scripts/local/prepare-image-variants.mjs && node scripts/local/install-image-variants.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",

@@ -71,9 +71,9 @@ const orderStatuses = ['Enquiry', 'Quotation sent', 'Follow-up', 'Confirmed', 'A
 const profitStatuses = new Set(['Full amount paid', 'Closed']);
 
 function escapeHtml(value = '') { const el = document.createElement('span'); el.textContent = value; return el.innerHTML; }
-function imageSource(image = '') { return image.startsWith('assets/catalogue/') ? image.replace('assets/catalogue/', 'assets/catalogue-webp/').replace(/\.png$/i, '.webp') : image; }
-function imageMarkup(product, className = '') { const source = imageSource(product?.image || ''); return source ? `<img class="${className}" src="${escapeHtml(source)}" alt="${escapeHtml(product.name)}">` : `<div class="${className} image-fallback">${escapeHtml(product?.name?.slice(0, 1) || 'M')}</div>`; }
-function pickerImageMarkup(product) { const source = imageSource(product?.image || ''); const content = source ? `<img class="picker-image" src="${escapeHtml(source)}" alt="${escapeHtml(product.name)}">` : `<span class="picker-image image-fallback">${escapeHtml(product?.name?.slice(0, 1) || 'M')}</span>`; return `<span class="picker-image-frame">${content}</span>`; }
+function imageSource(image = '', variant = 'grid') { image = ProductImages.source(image, variant); return image.startsWith('assets/catalogue/') ? image.replace('assets/catalogue/', 'assets/catalogue-webp/').replace(/\.png$/i, '.webp') : image; }
+function imageMarkup(product, className = '', variant = 'grid') { const print = className.includes('catalogue-product') || className.includes('print-quote'); const source = imageSource(product?.image || '', print ? 'export' : className === 'product-detail-photo' ? 'detail' : variant); return source ? `<img class="${className}" ${print ? 'src' : 'data-image-src'}="${escapeHtml(source)}" decoding="async" alt="${escapeHtml(product.name)}">` : `<div class="${className} image-fallback">${escapeHtml(product?.name?.slice(0, 1) || 'M')}</div>`; }
+function pickerImageMarkup(product) { const source = imageSource(product?.image || '', 'thumb'); const content = source ? `<img class="picker-image" decoding="async" data-image-src="${escapeHtml(source)}" alt="${escapeHtml(product.name)}">` : `<span class="picker-image image-fallback">${escapeHtml(product?.name?.slice(0, 1) || 'M')}</span>`; return `<span class="picker-image-frame">${content}</span>`; }
 function notify(message, type = 'error') { const region = $('#toastRegion'); if (!region) return window.alert(message); const toast = document.createElement('div'); toast.className = `toast ${type === 'success' ? 'success' : 'error'}`; toast.setAttribute('role', type === 'success' ? 'status' : 'alert'); toast.textContent = message; region.append(toast); setTimeout(() => { toast.classList.add('leaving'); setTimeout(() => toast.remove(), 180); }, 4200); }
 function setDatabaseUpdateState(active, message = 'Saving changes…') { const overlay = $('#databaseSaving'); if (!overlay) return; databaseUpdateCount = Math.max(0, databaseUpdateCount + (active ? 1 : -1)); if (active) $('#databaseSavingMessage').textContent = message; overlay.hidden = databaseUpdateCount === 0; document.body.classList.toggle('database-update-pending', databaseUpdateCount > 0); }
 async function runDatabaseUpdate(message, work) { setDatabaseUpdateState(true, message); try { return await work(); } finally { setDatabaseUpdateState(false); } }
@@ -268,8 +268,24 @@ async function renameOccasion(code, label) { if (!label) throw new Error('Enter 
 async function removeOccasion(code, replacementCode) { const { error } = await db.rpc('remove_workspace_occasion', { p_code: code, p_replacement_code: replacementCode }); if (error) throw error; await hydrateFromSupabase(); renderOccasionManager(); notify('Occasion removed and existing tags reassigned.', 'success'); }
 function syncProductRoundedPrice() { const form = $('#productForm'); if (!form) return; $('#productRoundedPrice').value = money(roundedProductPrice(form.elements.rate.value, form.elements.buffer.value)); }
 function syncProductBufferDefault() { const form = $('#productForm'); if (!form) return; if (form.dataset.bufferManuallyEdited !== 'true') { const cost = Math.max(0, Number(form.elements.rate.value || 0)); form.elements.buffer.value = cost ? (Math.round(cost * 8) / 100).toFixed(2) : ''; } syncProductRoundedPrice(); }
-function openProductDialog(product) { if (!assertAccess()) return; editingProduct = product?.id || null; const form = $('#productForm'); form.reset(); form.dataset.bufferManuallyEdited = product ? 'true' : 'false'; $('#eventTagChoices').innerHTML = tableOccasions().map(tag => `<label><input type="checkbox" name="events" value="${tag}"${(product?.events || []).includes(tag) ? ' checked' : ''}>${tagLabel(tag)}</label>`).join(''); $('#dialogLabel').textContent = product ? 'EDIT PRODUCT' : 'NEW PRODUCT'; $('#dialogTitle').textContent = product ? 'Edit product' : 'Add a product'; if (product) { form.elements.name.value = product.name; form.elements.rate.value = product.baseCost || ''; form.elements.buffer.value = product.buffer || 0; form.elements.supplier.value = product.supplier || ''; form.elements.reorderLevel.value = product.reorderLevel || 0; form.elements.leadTimeDays.value = product.leadTimeDays || 0; } syncProductRoundedPrice(); $('#productDialog').showModal(); }
-async function uploadImage(file, productId) { const extension = file.name.split('.').pop()?.toLowerCase() || 'jpg'; const path = `${user.id}/${productId}-${Date.now()}.${extension}`; const { error } = await db.storage.from('catalogue').upload(path, file, { cacheControl: '31536000', upsert: false }); if (error) throw error; return db.storage.from('catalogue').getPublicUrl(path).data.publicUrl; }
+function openProductDialog(product) { if (!assertAccess()) return; editingProduct = product?.id || null; const form = $('#productForm'); form.reset(); form.dataset.draftProductId = product?.id || `product-${uuid()}`; form.dataset.bufferManuallyEdited = product ? 'true' : 'false'; $('#eventTagChoices').innerHTML = tableOccasions().map(tag => `<label><input type="checkbox" name="events" value="${tag}"${(product?.events || []).includes(tag) ? ' checked' : ''}>${tagLabel(tag)}</label>`).join(''); $('#dialogLabel').textContent = product ? 'EDIT PRODUCT' : 'NEW PRODUCT'; $('#dialogTitle').textContent = product ? 'Edit product' : 'Add a product'; if (product) { form.elements.name.value = product.name; form.elements.rate.value = product.baseCost || ''; form.elements.buffer.value = product.buffer || 0; form.elements.supplier.value = product.supplier || ''; form.elements.reorderLevel.value = product.reorderLevel || 0; form.elements.leadTimeDays.value = product.leadTimeDays || 0; } syncProductRoundedPrice(); $('#productDialog').showModal(); }
+const preparedUploads = new WeakMap();
+async function uploadImage(file) {
+  let draft = preparedUploads.get(file);
+  if (!draft) {
+    draft = { variants: await ProductImages.prepare(file), version: uuid(), uploaded: new Set() };
+    preparedUploads.set(file, draft);
+  }
+  for (const [variant, blob] of Object.entries(draft.variants)) {
+    if (draft.uploaded.has(variant)) continue;
+    const path = `${user.id}/variants-v1/${draft.version}/${variant}.webp`;
+    const { error } = await db.storage.from('catalogue').upload(path, blob, { contentType: 'image/webp', cacheControl: '31536000', upsert: false });
+    if (error && String(error.statusCode) !== '409') throw error;
+    // A lost success response may leave this exact immutable object already stored.
+    draft.uploaded.add(variant);
+  }
+  return db.storage.from('catalogue').getPublicUrl(`${user.id}/variants-v1/${draft.version}/grid.webp`).data.publicUrl;
+}
 async function saveProduct(form) {
   if (!assertAccess() || productSaveInFlight) return;
   const existing = products.find(product => product.id === editingProduct);
@@ -281,10 +297,10 @@ async function saveProduct(form) {
   if (submitButton) { submitButton.disabled = true; submitButton.classList.add('is-loading'); submitButton.setAttribute('aria-busy', 'true'); submitButton.textContent = 'Saving product…'; }
   try {
     await runDatabaseUpdate('Saving product…', async () => {
-      const id = existing?.id || `product-${uuid()}`;
+      const id = existing?.id || form.dataset.draftProductId;
       let image = existing?.image || '';
       const imageFile = form.elements.image.files[0];
-      if (imageFile) image = await uploadImage(imageFile, id);
+      if (imageFile) image = await uploadImage(imageFile);
       const productCost = Math.max(0, Number(form.elements.rate.value || 0));
       const buffer = Math.max(0, Number(form.elements.buffer.value || 0));
       const payload = { id, owner_id: user.id, kind: 'product', name: form.elements.name.value.trim(), cost: productCost, buffer, occasions: events, photo: image, contents: '', component_ids: [], sku: existing?.sku || id, supplier_name: form.elements.supplier.value.trim(), reorder_level: Math.max(0, Number(form.elements.reorderLevel.value || 0)), lead_time_days: Math.max(0, Number(form.elements.leadTimeDays.value || 0)) };
@@ -334,7 +350,14 @@ const pdfMoney = value => `INR ${Number(value || 0).toLocaleString('en-IN', { mi
 const pdfExportStamp = () => new Intl.DateTimeFormat('en-US', { month: 'short', year: 'numeric' }).format(new Date());
 const pdfFilenamePart = value => String(value || '').replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 56);
 const pdfExportFilename = (type, ...details) => `Meraki & Mirth - ${type}${details.map(pdfFilenamePart).filter(Boolean).map(value => ` - ${value}`).join('')} - ${pdfExportStamp()}.pdf`;
-function printWithFilename(filename) { const originalTitle = document.title; const title = filename.replace(/\.pdf$/i, ''); const restore = () => { document.title = originalTitle; window.removeEventListener('afterprint', restore); }; document.title = title; window.addEventListener('afterprint', restore, { once: true }); window.print(); window.setTimeout(restore, 5000); }
+async function printWithFilename(filename) {
+  const images = [...document.querySelectorAll('#printCatalogue img')];
+  const ready = await Promise.race([
+    Promise.all(images.map(image => image.decode().then(() => true, () => false))),
+    new Promise(resolve => setTimeout(() => resolve(null), 15000))
+  ]);
+  if (!ready || ready.includes(false)) { notify('Some print images could not load. Please retry the export.'); return; }
+  const originalTitle = document.title; const title = filename.replace(/\.pdf$/i, ''); const restore = () => { document.title = originalTitle; window.removeEventListener('afterprint', restore); }; document.title = title; window.addEventListener('afterprint', restore, { once: true }); window.print(); window.setTimeout(restore, 5000); }
 function blobAsDataUrl(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -344,24 +367,21 @@ function blobAsDataUrl(blob) {
   });
 }
 async function imageDataForPdf(source) {
-  const resolvedSource = imageSource(source);
+  const resolvedSource = imageSource(source, 'export');
   if (!resolvedSource) return null;
   let dataUrl = resolvedSource.startsWith('data:') ? resolvedSource : '';
   if (!dataUrl) {
     // Rendering a fetched blob as a data URL keeps the canvas same-origin. It is
     // more reliable than blob URLs in Android's WebView and prevents letter-tile
     // fallbacks when a public Storage image decodes a little late.
-    for (const cache of ['force-cache', 'no-store']) {
-      try {
-        const response = await browserFetch(resolvedSource, { cache, credentials: 'omit' });
-        if (!response.ok) continue;
-        const blob = await response.blob();
-        if (!blob.size) continue;
-        dataUrl = await blobAsDataUrl(blob);
-        break;
-      } catch {
-        // Retry once without the WebView cache before reporting an unavailable tile.
-      }
+    try {
+      const response = await browserFetch(resolvedSource, { cache: 'force-cache', credentials: 'omit', signal: AbortSignal.timeout(15000) });
+      if (!response.ok) return null;
+      const blob = await response.blob();
+      if (!blob.size) return null;
+      dataUrl = await blobAsDataUrl(blob);
+    } catch {
+      // Leave a fallback tile on failure; avoid doubling egress with an automatic retry.
     }
   }
   if (!dataUrl) return null;
@@ -426,7 +446,8 @@ async function pdfTileData(product) {
 }
 async function preloadPdfProductImages(items) {
   const uniqueItems = [...new Map(items.filter(Boolean).map(item => [item.image || item.id, item])).values()];
-  await Promise.all(uniqueItems.map(pdfTileData));
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(3, uniqueItems.length) }, async () => { while (next < uniqueItems.length) await pdfTileData(uniqueItems[next++]); }));
 }
 async function pdfProductImage(doc, product, x, y, width, height) { const data = await pdfTileData(product); doc.setFillColor(247, 237, 225); doc.roundedRect(x, y, width, height, 2, 2, 'F'); if (data) { try { doc.addImage(data, 'PNG', x, y, width, height, undefined, 'FAST'); return; } catch {} } doc.setTextColor(...pdfPalette.gold); doc.setFont('times', 'bold'); doc.setFontSize(16); doc.text((product.name || 'M').slice(0, 1).toUpperCase(), x + width / 2, y + height / 2 + 4, { align: 'center' }); }
 async function drawPdfProductGallery(doc, items, { centerX = 105, top, columns, tileSize, gap }) {
