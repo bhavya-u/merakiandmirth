@@ -112,6 +112,30 @@ function syncOccasionLists() {
   studioProductFilter.value = studioProductOccasion;
 }
 
+const expenseFields = 'id,submitted_by_id,submitted_by_name,expense_type,description,vendor,delivery_mode,delivery_provider,distance_km,rate_per_km,amount,note,approval_status,approved_by_name,settled_at,created_at';
+let expenseSummary = { count: 0, pending: 0, approved: 0, settled: 0, people: [] };
+let expenseHasMore = false;
+let expensePageLoading = false;
+let expenseRevision = 0;
+function expensePageQuery(after) {
+  let query = db.from('expense_claims').select(expenseFields).order('created_at', { ascending: false }).order('id', { ascending: false }).limit(51);
+  if (after) query = query.or(`created_at.lt.${after.created_at},and(created_at.eq.${after.created_at},id.lt.${after.id})`);
+  return query;
+}
+async function loadMoreExpenses() {
+  if (expensePageLoading || !expenseHasMore || !accessGranted) return;
+  const epoch = dataEpoch, revision = expenseRevision;
+  expensePageLoading = true; renderExpenses();
+  try {
+    const result = await expensePageQuery(expenseClaims.at(-1));
+    if (epoch !== dataEpoch || revision !== expenseRevision) return;
+    if (result.error) throw result.error;
+    const known = new Set(expenseClaims.map(row => row.id));
+    expenseClaims.push(...result.data.slice(0, 50).filter(row => !known.has(row.id)));
+    expenseHasMore = result.data.length > 50;
+  } catch (error) { notify(`Could not load more expenses: ${error.message}`); }
+  finally { expensePageLoading = false; renderExpenses(); }
+}
 const viewData = {
   studio: ['items', 'occasions'], library: ['items', 'occasions', 'vendors'],
   catalogues: ['items', 'occasions'], quotes: ['items', 'occasions', 'clients'],
@@ -139,7 +163,7 @@ function hydrateFromSupabase(groups = Object.keys(dataQueries())) {
     }
     if (results.orders) rawOrderRows = results.orders;
     if (results.orders || results.items) orders = rawOrderRows.map(orderFromRow);
-    if (results.expenses) expenseClaims = results.expenses;
+    if (results.expenses) { expenseClaims = results.expenses.rows; expenseHasMore = results.expenses.more; expenseSummary = results.expenses.summary; expenseRevision++; }
     if (results.policies) expensePolicies = results.policies;
     if (results.people) expenseAdmins = results.people;
     if (results.clients) clients = results.clients;
@@ -157,7 +181,7 @@ function dataQueries() {
     items: () => db.from('library_items').select('id,kind,name,cost,buffer,rounded_price,contents,component_ids,occasions,photo,sku,stock_on_hand,reorder_level,supplier_name,lead_time_days,created_at').order('name'),
     orders: () => db.from('orders').select('id,client_id,code,title,event,qty,total,status,items,additional_costs,created_at,customer_name,customer_phone,delivery_area,special_request,complimentary,event_date,delivery_date,net_wrapping,net_wrapping_unit_price,thank_you_card_code,thank_you_card_style,thank_you_card_unit_price,thank_you_card_design_fee,discount_percent,discount_amount,subtotal_before_discount,quote_sent_at,cost_snapshot,expenses_total').order('created_at', { ascending: false }),
     occasions: () => db.from('occasion_types').select('code,label,sort_order').eq('active', true).order('sort_order'),
-    expenses: () => db.from('expense_claims').select('*').order('created_at', { ascending: false }),
+    expenses: async () => { const [page, summary] = await Promise.all([expensePageQuery(), db.rpc('workspace_expense_summary')]); return { error: page.error || summary.error, data: { rows: (page.data || []).slice(0, 50), more: (page.data || []).length > 50, summary: summary.data } }; },
     policies: () => db.from('expense_rate_policies').select('delivery_mode,fuel_price_per_litre,kilometres_per_litre').eq('active', true),
     people: () => db.rpc('workspace_expense_people'),
     clients: () => db.from('clients').select('id,name,mobile_number,delivery_area,created_at,updated_at').order('updated_at', { ascending: false }),
@@ -171,6 +195,7 @@ async function updateAccess(session) {
   const accessEpoch = dataEpoch;
   rawOrderRows = [];
   products = []; combos = []; orders = []; clients = []; vendors = [];
+  expenseSummary = { count: 0, pending: 0, approved: 0, settled: 0, people: [] }; expenseHasMore = false; expenseRevision++;
   expenseClaims = []; expensePolicies = []; expenseAdmins = [];
   user = session?.user || null;
   accessGranted = false;
@@ -820,20 +845,18 @@ function expenseDetail(claim) {
   return `Delivery · ${claim.delivery_mode === 'bike' ? 'Bike' : 'Car'} · ${Number(claim.distance_km || 0).toLocaleString('en-IN')} km @ ${money(claim.rate_per_km)}/km`;
 }
 function renderExpenses() {
-  const pending = expenseClaims.filter(claim => claim.approval_status === 'pending');
-  const approvedUnsettled = expenseClaims.filter(claim => claim.approval_status === 'approved' && !claim.settled_at);
-  const settled = expenseClaims.filter(claim => Boolean(claim.settled_at));
-  const total = claims => claims.reduce((sum, claim) => sum + Number(claim.amount || 0), 0);
-  $('#expensePendingTotal').textContent = money(total(pending));
-  $('#expenseApprovedTotal').textContent = money(total(approvedUnsettled));
-  $('#expenseSettledTotal').textContent = money(total(settled));
+  $('#expensePendingTotal').textContent = money(expenseSummary.pending);
+  $('#expenseApprovedTotal').textContent = money(expenseSummary.approved);
+  $('#expenseSettledTotal').textContent = money(expenseSummary.settled);
   $('#expenseBalanceCards').innerHTML = expenseAdmins.map(admin => {
-    const due = approvedUnsettled.filter(claim => claim.submitted_by_id && claim.submitted_by_name === admin.display_name);
-    const awaiting = pending.filter(claim => claim.submitted_by_id && claim.submitted_by_name === admin.display_name);
-    return `<article class="expense-balance-card"><div><span>${escapeHtml(admin.display_name)}</span>${admin.can_approve_expenses ? '<em>Approver</em>' : ''}</div><b>${money(total(due))}</b><small>To settle · ${money(total(awaiting))} awaiting approval</small></article>`;
+    const balance = expenseSummary.people.find(person => person.name === admin.display_name) || { approved: 0, pending: 0 };
+    return `<article class="expense-balance-card"><div><span>${escapeHtml(admin.display_name)}</span>${admin.can_approve_expenses ? '<em>Approver</em>' : ''}</div><b>${money(balance.approved)}</b><small>To settle · ${money(balance.pending)} awaiting approval</small></article>`;
   }).join('');
-  $('#expenseClaimCount').textContent = expenseClaims.length ? `${expenseClaims.length} claim${expenseClaims.length === 1 ? '' : 's'}` : '';
+  $('#expenseClaimCount').textContent = expenseSummary.count ? `Showing ${expenseClaims.length} of ${expenseSummary.count} claims` : '';
   $('#expenseList').innerHTML = expenseClaims.map(claim => `<article class="expense-row"><div class="expense-row-main"><p>${escapeHtml(claim.submitted_by_name)} · ${escapeHtml(expenseDate(claim.created_at))}</p><h3>${escapeHtml(claim.description)}</h3><span>${escapeHtml(expenseDetail(claim))}${claim.note ? ` · ${escapeHtml(claim.note)}` : ''}</span></div><b>${money(claim.amount)}</b><span class="expense-status ${escapeHtml(claim.approval_status)}${claim.settled_at ? ' settled' : ''}">${escapeHtml(expenseStatusLabel(claim))}</span><div class="expense-actions">${canReviewExpense(claim) ? `<button class="soft-btn" data-expense-review="approved" data-expense-id="${claim.id}">Approve</button><button class="text-btn" data-expense-review="rejected" data-expense-id="${claim.id}">Reject</button>` : ''}${currentExpenseAdmin()?.can_approve_expenses && claim.approval_status === 'approved' && !claim.settled_at ? `<button class="soft-btn" data-expense-settle="${claim.id}">Mark settled</button>` : ''}${claim.approved_by_name ? `<small>Reviewed by ${escapeHtml(claim.approved_by_name)}</small>` : ''}</div></article>`).join('');
+  let more = $('#expenseLoadMore');
+  if (!more) { more = document.createElement('button'); more.id = 'expenseLoadMore'; more.className = 'soft-btn'; more.onclick = loadMoreExpenses; $('#expenseList').after(more); }
+  more.hidden = !expenseHasMore; more.disabled = expensePageLoading; more.textContent = expensePageLoading ? 'Loading…' : 'Load more expenses';
   $('#expenseEmpty').hidden = expenseClaims.length > 0;
   document.querySelectorAll('[data-expense-review]').forEach(button => button.onclick = () => reviewExpense(button.dataset.expenseId, button.dataset.expenseReview));
   document.querySelectorAll('[data-expense-settle]').forEach(button => button.onclick = () => settleExpense(button.dataset.expenseSettle));
