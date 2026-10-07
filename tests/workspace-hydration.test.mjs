@@ -5,9 +5,9 @@ import { readFile } from 'node:fs/promises';
 const app = await readFile(new URL('../app.js', import.meta.url), 'utf8');
 function fixture() {
   const calls = [], failures = new Set();
-  const rows = { library_items:[{id:'p',kind:'product'},{id:'c',kind:'combo'}], orders:[{id:'o'}], clients:[{id:'client'}] };
+  const rows = { library_items:[{id:'p',kind:'product',name:'P'},{id:'c',kind:'combo',name:'C'}], orders:[{id:'o'}], clients:[{id:'client'}] };
   const response = name => { calls.push(name); return { data: rows[name] || [], error: failures.has(name) ? { message:'test failure' } : null }; };
-  const db = { from: name => { const chain = { select:()=>chain, order:()=>chain, eq:()=>chain, then:(yes,no)=>Promise.resolve(response(name)).then(yes,no) }; return chain; }, rpc:name=>Promise.resolve(response(name)) };
+  const db = { from: name => { const chain = { select:()=>chain, order:()=>chain, eq:()=>chain, limit:()=>chain, gt:()=>chain, then:(yes,no)=>Promise.resolve(response(name)).then(yes,no) }; return chain; }, rpc:name=>{ const chain={order:()=>chain,limit:()=>chain,gt:()=>chain,then:(yes,no)=>Promise.resolve(response(name)).then(yes,no)};return chain; } };
   const c = vm.createContext({ db, ordersFrom:'', ordersTo:'', orderSummary:{},orderHasMore:false,orderRevision:0,orderPageQuery:()=>Promise.resolve(response('orders')), accessGranted:true, products:[],combos:[],orders:[],clients:[],vendors:[],occasionTypes:[],defaultOccasionTypes:[],expenseClaims:[],expensePolicies:[],expenseAdmins:[],productFromRow:x=>x,comboFromRow:x=>x,orderFromRow:x=>x,syncOccasionLists:()=>{},renderAll:()=>{} });
   vm.runInContext(app.slice(app.indexOf('const viewData ='), app.indexOf('\nasync function updateAccess')), c);
   return { c, calls, failures };

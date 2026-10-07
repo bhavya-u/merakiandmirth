@@ -63,3 +63,7 @@ Navigation reuses datasets for 30 seconds in memory; no business-data disk cache
 ## Checkpoints 7–8
 
 Added docs/egress-operations.md and a tested offline projection calculator. No recurring dashboard monitor has been installed and no production usage has been inferred. Reviewed optional data-saving mode: retain the existing efficient thumbnail/lazy-loading default; revisit a toggle only if production measurements justify it.
+
+## Checkpoint 5 — catalogue/directory completeness decision
+
+Orders/expenses use progressive 50-row UI pages. Catalogue items, vendors, clients and client summaries now fetch explicit fields through 500-row keyset batches, publish only a complete successful result, and reuse recent data. Tests cover 1,001 records and later-page failure without publishing a truncated list. This closes the API row-limit correctness gap while preserving full local searches, quote autofill, combo composition and exports. It does NOT reduce the total cold metadata bytes for these datasets or bound their total in-memory size. A server-search/selected-ID architecture remains a future scaling change if these lists become large; it is not claimed implemented. Current egress savings come from image work, progressive operational ledgers and short read reuse. Product/combo writes also refresh order summaries to keep legacy derived profit consistent after price/composition edits.
