@@ -8,7 +8,7 @@ function fixture() {
   const rows = { library_items:[{id:'p',kind:'product'},{id:'c',kind:'combo'}], orders:[{id:'o'}], clients:[{id:'client'}] };
   const response = name => { calls.push(name); return { data: rows[name] || [], error: failures.has(name) ? { message:'test failure' } : null }; };
   const db = { from: name => { const chain = { select:()=>chain, order:()=>chain, eq:()=>chain, then:(yes,no)=>Promise.resolve(response(name)).then(yes,no) }; return chain; }, rpc:name=>Promise.resolve(response(name)) };
-  const c = vm.createContext({ db, accessGranted:true, products:[],combos:[],orders:[],clients:[],vendors:[],occasionTypes:[],defaultOccasionTypes:[],expenseClaims:[],expensePolicies:[],expenseAdmins:[],productFromRow:x=>x,comboFromRow:x=>x,orderFromRow:x=>x,syncOccasionLists:()=>{},renderAll:()=>{} });
+  const c = vm.createContext({ db, ordersFrom:'', ordersTo:'', orderSummary:{},orderHasMore:false,orderRevision:0,orderPageQuery:()=>Promise.resolve(response('orders')), accessGranted:true, products:[],combos:[],orders:[],clients:[],vendors:[],occasionTypes:[],defaultOccasionTypes:[],expenseClaims:[],expensePolicies:[],expenseAdmins:[],productFromRow:x=>x,comboFromRow:x=>x,orderFromRow:x=>x,syncOccasionLists:()=>{},renderAll:()=>{} });
   vm.runInContext(app.slice(app.indexOf('const viewData ='), app.indexOf('\nasync function updateAccess')), c);
   return { c, calls, failures };
 }
@@ -20,7 +20,7 @@ test('Studio reads only items/occasions; targeted refresh preserves other data',
   const products=c.products;
   calls.length=0;
   await c.hydrateFromSupabase(['clients']);
-  assert.deepEqual(calls,['clients']);
+  assert.deepEqual(calls.sort(),['clients','workspace_client_order_summary']);
   assert.equal(c.products,products);
   assert.equal(c.clients[0].id,'client');
 });
