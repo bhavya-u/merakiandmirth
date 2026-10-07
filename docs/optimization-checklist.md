@@ -77,3 +77,7 @@ Production rollout/backup/rollback procedure is saved in docs/production-rollout
 All 17 Node tests, local auth/member/outsider isolation and image-access integration checks, transactional migration rollback tests and both summary SQL tests passed. Browser smoke checks passed after bounded metadata paging and short read reuse: 88 products, one sample client's correct order count, expense screen and no console errors. Expense UI was additionally checked with 61 temporary claims: 50 displayed with full INR 610 total, then 61 after Load more with unchanged total and hidden exhausted control. Exact temporary fixtures removed afterward.
 
 Awaiting Android test device for actual PDF sharing/WebView verification (request sent to user). Production inventory, external backup and deployment remain unexecuted. No paid services enabled, no scheduled monitoring installed, and no production data changed.
+
+## Safety audit supersedes release assumptions
+
+See docs/optimization-safety-audit.md. Full local regression passed, but release sign-off is withheld: new detail-refresh/hydration race findings, existing non-atomic/non-idempotent business writes, production migration/backup gaps and Android device tests remain. Completed checklist boxes indicate implemented scope, not a guarantee of data safety or a production approval.
