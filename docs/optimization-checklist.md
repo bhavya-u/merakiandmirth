@@ -8,7 +8,7 @@ Work proceeds in this order on the feature branch. Production rollout follows lo
 - [ ] 3. Complete image release checks: interrupted uploads, saved PDF visual inspection and Android sharing.
 - [x] 4. Map screen data dependencies; replace whole-workspace reloads with screen-specific queries and targeted invalidation. Verify fresh data after edits and navigation.
 - [ ] 5. Add pagination and explicit field selection to growing lists; preserve searches, totals, exports and sorting semantics.
-- [ ] 6. Deduplicate in-flight reads and bound retries; cancel obsolete requests and handle quota restrictions without retry loops.
+- [x] 6. Deduplicate in-flight reads and bound retries; cancel obsolete requests and handle quota restrictions without retry loops.
 - [ ] 7. Add usage review procedure for cached/uncached egress separately, monthly projections and proposed 2.5 GB/category operating target. Do not represent alerts as spending caps.
 - [ ] 8. Review optional data-saving mode against measured needs; retain detail/export quality on demand.
 - [ ] 9. Prepare production inventory, external backup, dry run and release/rollback instructions. Verify production availability and release checks before migration.
@@ -53,3 +53,9 @@ Orders now use 50-row cursor pages (plus one lookahead row), ordered by created_
 Verification: 10 Node tests and static build passed. Transactional SQL fixture with 61 completed orders validated complete count, legacy unit-cost profit calculation, inclusive date boundaries and client counts. Browser verified 50 visible rows with total 62, load-more to 62, hidden exhausted button, client count 62, and empty date range with zero rows/total. Exact temporary fixture IDs were deleted after verification; original sample order retained. Migration 202610060003 must precede client deployment. Production unchanged.
 
 Remaining pagination scope: product and directory searches still operate on their full fetched arrays and need server-search design before introducing limits. Checkpoint 5 remains open for those lists; request deduplication can proceed independently.
+
+## Checkpoint 6 — request safeguards
+
+Navigation reuses datasets for 30 seconds in memory; no business-data disk cache. Date-filtered order keys are separate. Writes bypass reuse, failed reads do not become fresh, and auth transitions clear reuse timestamps and abort active workspace reads. Serialized repeated navigation avoids concurrent duplicate reads and reuses the first result. Workspace REST reads/read-only RPC fetches have a 20-second timeout through response headers; quota/rate responses (402/429) pause subsequent reads for 30 seconds. No app-level automatic retry loop. Read-only summary RPCs no longer show a misleading saving overlay. In-flight reads already started before a quota response may finish. SDK authentication behavior is separate.
+
+13 Node tests and static build passed, including forced write refresh, queued navigation reuse, quota cooldown without network traffic and caller-abort propagation. Browser and integration regression checks remain part of the cumulative release review.

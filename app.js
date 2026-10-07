@@ -18,11 +18,29 @@ const MAX_COMBO_PRODUCTS = 12;
 const COMBO_COLLAGE_PRODUCTS = 6;
 const config = window.SUPABASE_CONFIG;
 const browserFetch = window.fetch.bind(window);
+const workspaceReadControllers = new Set();
+let workspaceReadCooldownUntil = 0;
+async function fetchWorkspaceRead(resource, options) {
+  if (Date.now() < workspaceReadCooldownUntil) return new Response(JSON.stringify({ message: 'Workspace reads are temporarily paused after a quota or rate limit. Please try again shortly.' }), { status: 429, headers: { 'Content-Type': 'application/json' } });
+  const controller = new AbortController();
+  const supplied = options.signal || (resource instanceof Request ? resource.signal : null);
+  const abort = () => controller.abort();
+  if (supplied?.aborted) abort();
+  supplied?.addEventListener('abort', abort, { once: true });
+  workspaceReadControllers.add(controller);
+  const timeout = setTimeout(abort, 20000);
+  try {
+    const response = await browserFetch(resource, { ...options, signal: controller.signal });
+    if ([402,429].includes(response.status)) workspaceReadCooldownUntil = Date.now() + 30000;
+    return response;
+  } finally { clearTimeout(timeout); supplied?.removeEventListener('abort', abort); workspaceReadControllers.delete(controller); }
+}
 window.fetch = async (resource, options = {}) => {
   const requestUrl = resource instanceof Request ? resource.url : String(resource);
   const method = (options.method || (resource instanceof Request ? resource.method : 'GET')).toUpperCase();
-  const isReadOnlyRpc = /\/rest\/v1\/rpc\/(workspace_access_state|workspace_expense_people)$/.test(requestUrl);
+  const isReadOnlyRpc = /\/rest\/v1\/rpc\/(workspace_access_state|workspace_expense_people|workspace_expense_summary|workspace_order_summary|workspace_client_order_summary)$/.test(requestUrl);
   const isSupabaseWrite = !isReadOnlyRpc && /\/((rest|storage|functions)\/v1)\//.test(requestUrl) && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
+  if (requestUrl.startsWith(`${config?.url}/rest/v1/`) && (method === 'GET' || isReadOnlyRpc)) return fetchWorkspaceRead(resource, options);
   if (!isSupabaseWrite) return browserFetch(resource, options);
   const message = requestUrl.includes('/storage/v1/') ? 'Uploading image…' : requestUrl.includes('/functions/v1/') ? 'Sending update…' : 'Saving changes…';
   setDatabaseUpdateState(true, message);
@@ -172,13 +190,16 @@ const viewData = {
 };
 let dataEpoch = 0;
 let rawOrderRows = [];
+const datasetReadTimes = new Map();
+const datasetKey = key => key === 'orders' ? `orders:${ordersFrom}:${ordersTo}` : key;
 let hydrationQueue = Promise.resolve();
-function hydrateFromSupabase(groups = Object.keys(dataQueries())) {
+function hydrateFromSupabase(groups = Object.keys(dataQueries()), { reuse = false } = {}) {
   const epoch = dataEpoch;
   const work = async () => {
     if (epoch !== dataEpoch || !accessGranted) return;
     const queries = dataQueries();
-    const selected = [...new Set(groups)];
+    const selected = [...new Set(groups)].filter(key => !reuse || Date.now() - (datasetReadTimes.get(datasetKey(key)) || 0) >= 30000);
+    if (!selected.length) return;
     const responses = await Promise.all(selected.map(async key => [key, await queries[key]()]));
     if (epoch !== dataEpoch || !accessGranted) return;
     const failure = responses.find(([, result]) => result.error);
@@ -196,6 +217,7 @@ function hydrateFromSupabase(groups = Object.keys(dataQueries())) {
     if (results.people) expenseAdmins = results.people;
     if (results.clients) clients = results.clients;
     if (results.vendors) vendors = results.vendors;
+    selected.forEach(key => datasetReadTimes.set(datasetKey(key), Date.now()));
     syncOccasionLists();
     renderAll();
   };
@@ -219,6 +241,8 @@ function dataQueries() {
 
 async function updateAccess(session) {
   dataEpoch++;
+  datasetReadTimes.clear();
+  workspaceReadControllers.forEach(controller => controller.abort());
   navigationRequest++;
   const accessEpoch = dataEpoch;
   rawOrderRows = []; orderHasMore = false; orderRevision++; orderSummary = { count: 0, packing: 0, delivered: 0, converted: 0, qualifying: 0, profit: 0 };
@@ -276,7 +300,7 @@ let navigationRequest = 0;
 async function navigate(view) {
   if (!viewData[view] || !accessGranted) return;
   const request = ++navigationRequest;
-  try { await hydrateFromSupabase(viewData[view]); }
+  try { await hydrateFromSupabase(viewData[view], { reuse: true }); }
   catch (error) { notify(`Could not load this screen: ${error.message}`); return; }
   if (request !== navigationRequest || !accessGranted) return;
   document.querySelectorAll('.nav,.view').forEach(node => node.classList.remove('active'));

@@ -40,3 +40,11 @@ test('queued reads from a previous auth epoch cannot publish data', async () => 
   assert.equal(calls.length,0);
   assert.equal(c.products.length,0);
 });
+
+test('queued navigation reuses recent datasets but writes force refresh', async () => {
+ const {c,calls}=fixture();
+ await Promise.all([c.hydrateFromSupabase(['items'],{reuse:true}),c.hydrateFromSupabase(['items'],{reuse:true})]);
+ assert.equal(calls.filter(x=>x==='library_items').length,1);
+ await c.hydrateFromSupabase(['items']);
+ assert.equal(calls.filter(x=>x==='library_items').length,2);
+});
