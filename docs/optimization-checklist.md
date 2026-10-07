@@ -7,7 +7,7 @@ Work proceeds in this order on the feature branch. Production rollout follows lo
 - [x] 2. Integrate the local migration tool with history, verified uploads, external JSON backups and a dry-run/rollback command. Preserve old objects.
 - [ ] 3. Complete image release checks: interrupted uploads, saved PDF visual inspection and Android sharing.
 - [x] 4. Map screen data dependencies; replace whole-workspace reloads with screen-specific queries and targeted invalidation. Verify fresh data after edits and navigation.
-- [ ] 5. Add pagination and explicit field selection to growing lists; preserve searches, totals, exports and sorting semantics.
+- [x] 5. Add pagination and explicit field selection to growing lists; preserve searches, totals, exports and sorting semantics.
 - [x] 6. Deduplicate in-flight reads and bound retries; cancel obsolete requests and handle quota restrictions without retry loops.
 - [x] 7. Add usage review procedure for cached/uncached egress separately, monthly projections and proposed 2.5 GB/category operating target. Do not represent alerts as spending caps.
 - [x] 8. Review optional data-saving mode against measured needs; retain detail/export quality on demand.
@@ -67,3 +67,13 @@ Added docs/egress-operations.md and a tested offline projection calculator. No r
 ## Checkpoint 5 — catalogue/directory completeness decision
 
 Orders/expenses use progressive 50-row UI pages. Catalogue items, vendors, clients and client summaries now fetch explicit fields through 500-row keyset batches, publish only a complete successful result, and reuse recent data. Tests cover 1,001 records and later-page failure without publishing a truncated list. This closes the API row-limit correctness gap while preserving full local searches, quote autofill, combo composition and exports. It does NOT reduce the total cold metadata bytes for these datasets or bound their total in-memory size. A server-search/selected-ID architecture remains a future scaling change if these lists become large; it is not claimed implemented. Current egress savings come from image work, progressive operational ledgers and short read reuse. Product/combo writes also refresh order summaries to keep legacy derived profit consistent after price/composition edits.
+
+## Checkpoint 9 preparation; rollout blocked
+
+Production rollout/backup/rollback procedure is saved in docs/production-rollout.md. Actual production inventory, verified external object backup and production dry run remain pending, so checkpoints 9 and 10 are not marked complete. Device sharing verification is also still outstanding. Production changes must not be inferred from local success. Checkpoint 5 is complete within the documented design: progressive order/expense pages and complete, bounded metadata transport pages; it does not claim server-side catalogue search.
+
+## Cumulative regression review — 7 October 2026
+
+All 17 Node tests, local auth/member/outsider isolation and image-access integration checks, transactional migration rollback tests and both summary SQL tests passed. Browser smoke checks passed after bounded metadata paging and short read reuse: 88 products, one sample client's correct order count, expense screen and no console errors. Expense UI was additionally checked with 61 temporary claims: 50 displayed with full INR 610 total, then 61 after Load more with unchanged total and hidden exhausted control. Exact temporary fixtures removed afterward.
+
+Awaiting Android test device for actual PDF sharing/WebView verification (request sent to user). Production inventory, external backup and deployment remain unexecuted. No paid services enabled, no scheduled monitoring installed, and no production data changed.
