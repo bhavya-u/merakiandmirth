@@ -9,8 +9,8 @@ Work proceeds in this order on the feature branch. Production rollout follows lo
 - [x] 4. Map screen data dependencies; replace whole-workspace reloads with screen-specific queries and targeted invalidation. Verify fresh data after edits and navigation.
 - [ ] 5. Add pagination and explicit field selection to growing lists; preserve searches, totals, exports and sorting semantics.
 - [x] 6. Deduplicate in-flight reads and bound retries; cancel obsolete requests and handle quota restrictions without retry loops.
-- [ ] 7. Add usage review procedure for cached/uncached egress separately, monthly projections and proposed 2.5 GB/category operating target. Do not represent alerts as spending caps.
-- [ ] 8. Review optional data-saving mode against measured needs; retain detail/export quality on demand.
+- [x] 7. Add usage review procedure for cached/uncached egress separately, monthly projections and proposed 2.5 GB/category operating target. Do not represent alerts as spending caps.
+- [x] 8. Review optional data-saving mode against measured needs; retain detail/export quality on demand.
 - [ ] 9. Prepare production inventory, external backup, dry run and release/rollback instructions. Verify production availability and release checks before migration.
 - [ ] 10. Roll out and compare actual production usage; retain previous app release and images through an agreed rollback window. Review orphan cleanup separately.
 
@@ -59,3 +59,7 @@ Remaining pagination scope: product and directory searches still operate on thei
 Navigation reuses datasets for 30 seconds in memory; no business-data disk cache. Date-filtered order keys are separate. Writes bypass reuse, failed reads do not become fresh, and auth transitions clear reuse timestamps and abort active workspace reads. Serialized repeated navigation avoids concurrent duplicate reads and reuses the first result. Workspace REST reads/read-only RPC fetches have a 20-second timeout through response headers; quota/rate responses (402/429) pause subsequent reads for 30 seconds. No app-level automatic retry loop. Read-only summary RPCs no longer show a misleading saving overlay. In-flight reads already started before a quota response may finish. SDK authentication behavior is separate.
 
 13 Node tests and static build passed, including forced write refresh, queued navigation reuse, quota cooldown without network traffic and caller-abort propagation. Browser and integration regression checks remain part of the cumulative release review.
+
+## Checkpoints 7–8
+
+Added docs/egress-operations.md and a tested offline projection calculator. No recurring dashboard monitor has been installed and no production usage has been inferred. Reviewed optional data-saving mode: retain the existing efficient thumbnail/lazy-loading default; revisit a toggle only if production measurements justify it.
