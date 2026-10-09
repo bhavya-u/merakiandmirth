@@ -205,12 +205,13 @@ function hydrateFromSupabase(groups = Object.keys(dataQueries()), { reuse = fals
     const failure = responses.find(([, result]) => result.error);
     if (failure) throw new Error(failure[1].error.message);
     const results = Object.fromEntries(responses.map(([key, result]) => [key, result.data || []]));
+    if (results.orders && (results.orders.from !== ordersFrom || results.orders.to !== ordersTo)) return;
     if (results.occasions) occasionTypes = results.occasions.length ? results.occasions : defaultOccasionTypes;
     if (results.items) {
       products = results.items.filter(row => row.kind === 'product').map(productFromRow);
       combos = results.items.filter(row => row.kind === 'combo').map(comboFromRow);
     }
-    if (results.orders) { if (results.orders.from !== ordersFrom || results.orders.to !== ordersTo) return; rawOrderRows = results.orders.rows; orderSummary = results.orders.summary; orderHasMore = results.orders.more; orderRevision++; }
+    if (results.orders) { rawOrderRows = results.orders.rows; orderSummary = results.orders.summary; orderHasMore = results.orders.more; orderRevision++; }
     if (results.orders || results.items) orders = rawOrderRows.map(orderFromRow);
     if (results.expenses) { expenseClaims = results.expenses.rows; expenseHasMore = results.expenses.more; expenseSummary = results.expenses.summary; expenseRevision++; }
     if (results.policies) expensePolicies = results.policies;
@@ -454,7 +455,12 @@ async function saveProduct(form) {
     if (submitButton) { submitButton.disabled = false; submitButton.classList.remove('is-loading'); submitButton.removeAttribute('aria-busy'); submitButton.textContent = buttonLabel; }
   }
 }
-async function deleteProduct(id) { if (!assertAccess() || !confirm('Delete this product?')) return; const revisedCombos = combos.map(combo => ({ ...combo, productIds: combo.productIds.filter(productId => productId !== id) })); const { error: comboError } = await db.from('library_items').upsert(revisedCombos.map(combo => ({ id: combo.id, owner_id: user.id, kind: 'combo', name: combo.name, cost: liveComboRate(combo), contents: JSON.stringify({ margin: combo.margin }), component_ids: combo.productIds, occasions: [combo.occasion], photo: '' }))); if (comboError) return notify(comboError.message); const { error } = await db.from('library_items').delete().eq('id', id); if (error) return notify(error.message); await hydrateFromSupabase(['items', 'orders']); }
+async function deleteProduct(id) {
+  if (!assertAccess() || !confirm('Delete this product?')) return;
+  const { error } = await db.rpc('delete_product_atomic', { p_product: id });
+  if (error) return notify(error.message);
+  await hydrateFromSupabase(['items', 'orders']);
+}
 
 function renderCatalogueChoices() { const occasion = $('#catalogueOccasion').value || 'all_combos'; const visible = occasion === 'all_combos' ? combos : combos.filter(combo => normalizeTag(combo.occasion) === occasion); $('#catalogueComboList').innerHTML = visible.map(combo => { const items = combo.productIds.map(id => products.find(product => product.id === id)).filter(Boolean); return `<label class="catalogue-choice"><input type="checkbox" value="${combo.id}" ${selectedExportCombos.has(combo.id) ? 'checked' : ''}><div>${collage(items)}<div><p>${escapeHtml(tagLabel(normalizeTag(combo.occasion)))}</p><h3>${escapeHtml(combo.name)}</h3><span>${items.length} products · ${money(liveComboRate(combo))} per combo</span></div></div></label>`; }).join(''); $('#catalogueEmpty').hidden = visible.length > 0; $('#catalogueEmpty').textContent = occasion === 'all_combos' ? 'No saved catalogues yet. Create a combo in Studio first.' : 'No saved catalogues match this occasion.'; document.querySelectorAll('.catalogue-choice input').forEach(input => input.onchange = () => { if (input.checked && !selectedExportCombos.has(input.value) && selectedExportCombos.size >= 6) { input.checked = false; return notify('A catalogue can include up to six combos.'); } input.checked ? selectedExportCombos.add(input.value) : selectedExportCombos.delete(input.value); }); }
 function comboProducts(combo) { return combo.productIds.map(id => products.find(product => product.id === id)).filter(Boolean); }
@@ -757,7 +763,44 @@ async function exportQuote() {
   $('#printCatalogue').innerHTML = `<section class="print-catalogue-sheet print-quote-sheet"><header><img src="assets/meraki-mirth-logo-original.png" alt="Meraki &amp; Mirth"><div><p>YOUR CELEBRATION QUOTE</p><h1>${escapeHtml(quote.title)}</h1><span>Prepared with warmth by Meraki &amp; Mirth</span></div></header><div class="print-quote-body"><div class="print-quote-message"><p>${escapeHtml(quoteThankYou(quote))}</p><strong>${escapeHtml(quote.combo.name)}</strong><span>${escapeHtml(tagLabel(normalizeTag(quote.combo.occasion)))}</span>${eventDetails ? `<aside><b>Celebration schedule</b><p>${escapeHtml(eventDetails)}</p></aside>` : ''}${deliveryDetails ? `<aside><b>Delivery details</b><p>${escapeHtml(deliveryDetails)}</p></aside>` : ''}${quote.complimentary || quote.specialRequest ? `<aside><b>Thoughtful details</b><p>${quote.complimentary ? `${escapeHtml(quote.complimentary)} ` : ''}${quote.specialRequest ? `Client request: ${escapeHtml(quote.specialRequest)}` : ''}</p></aside>` : ''}</div><section class="print-quote-products${items.length > COMBO_COLLAGE_PRODUCTS ? ' expanded-products' : ''}"><span>YOUR THOUGHTFULLY CURATED SET</span><div>${productStrip}</div></section><section class="print-quote-inclusions"><span>WHAT’S INSIDE YOUR CURATED SET</span><ul class="${inclusions.length > COMBO_COLLAGE_PRODUCTS ? 'many-inclusions' : ''}">${inclusions.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></section><div class="print-quote-total"><span>Price per curated set</span><b>${money(quote.price)}</b><span>Curated sets</span><b>${quote.quantity}</b>${quote.discountAmount ? `<span>${quote.discountPercent}% discount</span><b>− ${money(quote.discountAmount)}</b>` : ''}<strong>Celebration total <b>${money(quote.total)}</b></strong></div><p class="print-quote-fulfilment"><b>Collection &amp; delivery</b>${escapeHtml(fulfilmentNote)}</p></div><footer><span>✿</span> MERAKI &amp; MIRTH <em>For the moments worth thanking.</em></footer></section>`;
   printWithFilename(pdfExportFilename('Quote', quote.clientName, quote.title));
 }
-async function saveOrder() { if (!assertAccess()) return; const quote = quoteValues(); if (!quote.combo) return notify('Choose a saved combo before saving a quotation.'); if (!quote.clientName) return notify('Add the client name before saving this quotation.'); if (!/^\d{7,15}$/.test(quote.clientMobile)) return notify('Add a valid client mobile number before saving this quotation.'); const { data: client, error: clientError } = await db.from('clients').upsert({ name: quote.clientName, mobile_number: quote.clientMobile, delivery_area: quote.deliveryArea }, { onConflict: 'mobile_number' }).select('id').single(); if (clientError) return notify(clientError.message); const code = `MAM-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${Math.floor(Math.random() * 900 + 100)}`; const { data, error } = await db.from('orders').insert({ owner_id: user.id, client_id: client.id, code, title: quote.title, event: quote.combo.occasion, qty: quote.quantity, total: quote.total, status: 'Quotation sent', customer_name: quote.clientName, customer_phone: quote.clientMobile, delivery_area: quote.deliveryArea, special_request: quote.specialRequest, complimentary: quote.complimentary, event_date: quote.eventDate || null, delivery_date: quote.deliveryDate || null, net_wrapping: quote.netWrapping, net_wrapping_unit_price: quote.netWrappingUnitPrice, additional_costs: quote.additionalCosts, discount_percent: quote.discountPercent, discount_amount: quote.discountAmount, subtotal_before_discount: quote.subtotal, quote_sent_at: new Date().toISOString(), cost_snapshot: quote.cost * quote.quantity, items: [{ comboId: quote.combo.id, comboName: quote.combo.name, margin: quote.margin, pricePerCombo: quote.price, unitCost: quote.cost, clientMobile: quote.clientMobile, deliveryArea: quote.deliveryArea, eventDate: quote.eventDate, deliveryDate: quote.deliveryDate, netWrapping: quote.netWrapping, netWrappingUnitPrice: quote.netWrappingUnitPrice, netWrappingTotal: quote.netWrappingTotal, additionalCosts: quote.additionalCosts, additionalCostTotal: quote.additionalCostTotal, complimentary: quote.complimentary, discountPercent: quote.discountPercent, discountAmount: quote.discountAmount, subtotalBeforeDiscount: quote.subtotal }] }).select('id').single(); if (error) return notify(error.message); if (data?.id) { const { error: comboLinkError } = await db.from('orders').update({ combo_id: quote.combo.id }).eq('id', data.id); if (comboLinkError) return notify(comboLinkError.message); } void dispatchTelegramNotifications(); await hydrateFromSupabase(['orders', 'clients']); notify('Quotation saved in the celebration workboard.', 'success'); await navigate('orders'); if (data?.id) openOrderDetail(data.id); }
+const pendingBusinessWrites = new Map();
+async function writeOnce(kind, payload, execute) {
+  const key = `meraki-pending-${user.id}-${kind}`;
+  const fingerprint = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(kind === 'inventory' ? { ...payload, expected_stock: null } : payload))))).map(n => n.toString(16).padStart(2,'0')).join('');
+  const prior = JSON.parse(sessionStorage.getItem(key) || 'null');
+  if (prior && prior.fingerprint !== fingerprint) throw new Error('An earlier save has an uncertain outcome. Restore its original values and retry before starting a different save.');
+  const operation = prior?.operation || uuid();
+  if (kind === 'inventory' && prior) payload.expected_stock = prior.expectedStock;
+  sessionStorage.setItem(key, JSON.stringify({ operation, fingerprint, expectedStock: payload.expected_stock }));
+  if (pendingBusinessWrites.has(key)) return pendingBusinessWrites.get(key);
+  const task = (async () => {
+    const result = await execute(operation);
+    if (result.error) {
+      // SQL errors confirm rollback; transport failures retain the operation for retry.
+      if (/^[0-9A-Z]{5}$/.test(result.error.code || '')) sessionStorage.removeItem(key);
+      throw new Error(result.error.message);
+    }
+    sessionStorage.removeItem(key);
+    return result.data;
+  })();
+  pendingBusinessWrites.set(key, task);
+  try { return await task; } finally { pendingBusinessWrites.delete(key); }
+}
+async function refreshAfterCommit(groups) {
+  try { await hydrateFromSupabase(groups); }
+  catch (error) { notify(`Saved successfully, but the screen could not refresh: ${error.message}. Reload to see the saved result.`); }
+}
+async function saveOrder() { if (!assertAccess()) return; const quote = quoteValues(); if (!quote.combo) return notify('Choose a saved combo before saving a quotation.'); if (!quote.clientName) return notify('Add the client name before saving this quotation.'); if (!/^\d{7,15}$/.test(quote.clientMobile)) return notify('Add a valid client mobile number before saving this quotation.'); try {
+ const client = { name: quote.clientName, mobile_number: quote.clientMobile, delivery_area: quote.deliveryArea };
+ const order = { combo_id: quote.combo.id, title: quote.title, event: quote.combo.occasion, qty: quote.quantity, total: quote.total, status: 'Quotation sent', customer_name: quote.clientName, customer_phone: quote.clientMobile, delivery_area: quote.deliveryArea, special_request: quote.specialRequest, complimentary: quote.complimentary, event_date: quote.eventDate || null, delivery_date: quote.deliveryDate || null, net_wrapping: quote.netWrapping, net_wrapping_unit_price: quote.netWrappingUnitPrice, additional_costs: quote.additionalCosts, discount_percent: quote.discountPercent, discount_amount: quote.discountAmount, subtotal_before_discount: quote.subtotal, cost_snapshot: quote.cost * quote.quantity, items: [{ comboId: quote.combo.id, comboName: quote.combo.name, margin: quote.margin, pricePerCombo: quote.price, unitCost: quote.cost, clientMobile: quote.clientMobile, deliveryArea: quote.deliveryArea, eventDate: quote.eventDate, deliveryDate: quote.deliveryDate, netWrapping: quote.netWrapping, netWrappingUnitPrice: quote.netWrappingUnitPrice, netWrappingTotal: quote.netWrappingTotal, additionalCosts: quote.additionalCosts, additionalCostTotal: quote.additionalCostTotal, complimentary: quote.complimentary, discountPercent: quote.discountPercent, discountAmount: quote.discountAmount, subtotalBeforeDiscount: quote.subtotal }] };
+ const data = await writeOnce('quotation', { client, order }, operation => db.rpc('save_quotation_once', { p_operation: operation, p_client: client, p_order: order }));
+ void dispatchTelegramNotifications();
+ notify('Quotation saved in the celebration workboard.', 'success');
+ await refreshAfterCommit(['orders','clients']);
+ await navigate('orders');
+ if (data?.id) await openOrderDetail(data.id);
+ } catch (error) { notify(error.message); }
+}
 
 async function exportQuoteNativeEnhanced(quote) {
   const { jsPDF } = window.jspdf || {};
@@ -890,17 +933,10 @@ async function saveInventory(form) {
   const action = form.elements.action.value;
   const quantity = Number(form.elements.quantity.value);
   if (!Number.isInteger(quantity)) throw new Error('Enter a whole number of units.');
-  const quantityDelta = action === 'set' ? quantity - product.stockOnHand : action === 'damage' ? -quantity : quantity;
-  if (quantityDelta === 0) throw new Error('This does not change the stock count.');
-  if (product.stockOnHand + quantityDelta < 0) throw new Error(`Only ${product.stockOnHand} units are currently on hand.`);
-  const movementType = action === 'receive' ? 'purchase' : action === 'damage' ? 'damage' : 'adjustment';
-  const [{ error: stockError }, { error: productError }] = await Promise.all([
-    db.from('inventory_movements').insert({ owner_id: user.id, library_item_id: product.id, quantity_delta: quantityDelta, movement_type: movementType, note: form.elements.note.value.trim() }),
-    db.from('library_items').update({ reorder_level: Math.max(0, Number(form.elements.reorderLevel.value || 0)) }).eq('id', product.id)
-  ]);
-  if (stockError || productError) throw new Error(stockError?.message || productError?.message);
+  const request = { product_id: product.id, action, quantity, expected_stock: action === 'set' ? product.stockOnHand : null, reorder_level: Math.max(0, Number(form.elements.reorderLevel.value || 0)), note: form.elements.note.value.trim() };
+  await writeOnce('inventory', request, operation => db.rpc('record_inventory_once', { p_operation: operation, p_request: request }));
   $('#inventoryDialog').close();
-  await hydrateFromSupabase(['items']);
+  await refreshAfterCommit(['items']);
 }
 
 function expensePolicy(mode) { return expensePolicies.find(policy => policy.delivery_mode === mode); }

@@ -81,3 +81,9 @@ Awaiting Android test device for actual PDF sharing/WebView verification (reques
 ## Safety audit supersedes release assumptions
 
 See docs/optimization-safety-audit.md. Full local regression passed, but release sign-off is withheld: new detail-refresh/hydration race findings, existing non-atomic/non-idempotent business writes, production migration/backup gaps and Android device tests remain. Completed checklist boxes indicate implemented scope, not a guarantee of data safety or a production approval.
+
+## Write-safety checkpoint — 9 October 2026
+
+Atomic inventory/quotation RPCs and actor-scoped operation receipts now protect retries from duplicate stock movements/orders. Client upsert, quotation creation and combo link commit together; inventory movement and reorder setting commit together. Product deletion updates only affected combo component arrays in its transaction, so a history restriction rolls back the whole deletion. Client retry tokens survive tab reloads in sessionStorage; confirmed SQL errors release them, unknown network outcomes retain them. A changed intent is deliberately blocked until the original request is retried. This is same-tab retry protection, not cross-device deduplication or automatic reconciliation of abandoned forms. Older app versions still use their original write paths.
+
+Principal review: approved for local integration. 21 Node tests and static build passed; rollback-only SQL tests passed duplicate retries, changed input rejection, inventory/client rollback, failed/successful product deletion and receipt privileges. Migration 202610090001 is required before deploying the new client. Production and device release gates remain open.
