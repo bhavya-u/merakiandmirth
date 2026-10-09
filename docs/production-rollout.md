@@ -1,6 +1,6 @@
 # Production image/performance rollout
 
-Status: PREPARED, NOT EXECUTED. Production inventory/backup and Android device verification are outstanding. All scripts under scripts/local are deliberately local-only; do not edit their host guard to deploy production.
+Status: READ-ONLY PREPARATION COMPLETED on 9 October 2026; deployment not executed. Production inventory, external backup and dry run are captured in docs/production-readiness-20261009.md. Android device verification and production-write authorization remain outstanding. All scripts under scripts/local are deliberately local-only; do not edit their host guard to deploy production.
 
 ## Release gates
 
@@ -25,7 +25,7 @@ If library_items has no updated_at column in the actual schema, omit that column
 
 1. Compare the real inventory with the generated manifest. Identify missing originals, mismatched IDs, duplicate paths, unsupported images and changed products. Stop on ambiguity; never assume the 88 local fixtures are a full production inventory.
 2. Compute proposed old URL → grid URL changes, variant byte totals and remaining storage headroom. Preview the full list and rollback references before any product update. Do not migrate prices or stock from synthetic local data.
-3. Apply additive migrations 202610060001 through 202610060003 using the normal reviewed migration process. Keep previous app deployment available. Check RPC access as member/outsider/anonymous.
+3. Apply additive migrations 202610060001 through 202610060003 and 202610090001 using the normal reviewed migration process. Keep previous app deployment available. Check RPC access as member/outsider/anonymous.
 4. Upload immutable variants with no overwrite. Verify Content-Type, length, decodability and content hash against the source output. Preserve old objects. Keep an external progress ledger after each product, including upload failures.
 5. Apply `apply_image_migration(batch, product, expected_previous_url, new_url)` per product. A conflict means a later edit: stop/reconcile it instead of forcing the write. Persist exported database history after partial success as well as full success.
 6. Deploy the reviewed app only after its required SQL functions are present. Check a small set first: cold/warm navigation, product details, editing, summary totals, contacts and PDF export. Expand the migration only after those checks pass.
@@ -37,4 +37,4 @@ Restore the prior app release if necessary. Keep additive schemas in place. For 
 
 ## Known limits
 
-No production-capable bulk runner is shipped yet; the local runner validates the protocol, not production credentials or inventory. Production apply and monitoring are not claimed completed. Catalogue and directory metadata still load fully through bounded batches to preserve full search/export semantics; a server-search/selected-ID design is a future scale change, not a benefit claimed by this release. Public object traffic and new devices remain potential quota consumers.
+A separate production-capable runner is shipped and documented in docs/release-runner.md; production apply/rollback have not been executed. Production apply and monitoring are not claimed completed. Catalogue and directory metadata still load fully through bounded batches to preserve full search/export semantics; a server-search/selected-ID design is a future scale change, not a benefit claimed by this release. Public object traffic and new devices remain potential quota consumers.

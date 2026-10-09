@@ -11,7 +11,7 @@ Work proceeds in this order on the feature branch. Production rollout follows lo
 - [x] 6. Deduplicate in-flight reads and bound retries; cancel obsolete requests and handle quota restrictions without retry loops.
 - [x] 7. Add usage review procedure for cached/uncached egress separately, monthly projections and proposed 2.5 GB/category operating target. Do not represent alerts as spending caps.
 - [x] 8. Review optional data-saving mode against measured needs; retain detail/export quality on demand.
-- [ ] 9. Prepare production inventory, external backup, dry run and release/rollback instructions. Verify production availability and release checks before migration.
+- [x] 9. Prepare production inventory, external backup, dry run and release/rollback instructions. Verify production availability and release checks before migration.
 - [ ] 10. Roll out and compare actual production usage; retain previous app release and images through an agreed rollback window. Review orphan cleanup separately.
 
 Migration history records only image references, never restores whole product rows. Rollback must not overwrite a subsequent edit. Service-role-only migration functions are not exposed to the app. An external backup remains necessary if the database is unavailable. Production mutations are not performed by the local scripts.
@@ -93,3 +93,11 @@ Principal review: approved for local integration. 21 Node tests and static build
 Open order detail is refreshed independently when pagination removes its row from the loaded page. Deleted records close the dialog; failed reads close stale actions and explain how to reopen. Responses from an old account or different selection are discarded. Date-filter identity is validated before any hydration publication.
 
 Principal review: approved for local integration. All 25 Node tests and static build passed, including page-two detail, deletion/read failure, late response rejection and filter changes during hydration. Production remains unchanged.
+
+## Release preparation checkpoint — 9 October 2026
+
+Production read-only access explicitly authorized and verified (HTTP 200). Captured 281 catalogue rows (228 products, 53 combos), external originals for all 228 product references, a rechecked export of 18 application tables, and metadata for 305 Storage objects. Generated production variants locally and a 228-product dry-run plan. See production-readiness-20261009.md. The external backup is on this Mac; it is not a full database dump or off-site backup.
+
+Added a separate release runner with explicit project binding, complete inventory/history pagination, verified resumable original backups, source and remote SHA-256 checks, immutable uploads, exact-plan verification, progress/history exports and guarded rollback. Hardened the existing local installer with content hashes and pagination too. Principal review: approved for release preparation, not production execution. All 29 Node tests, local access/isolation integration, atomic-write SQL, both summary SQL tests, image-history rollback, local installer CLI and new release-runner CLI tests passed. Static build passed. Actual browser quotation save and page-two order status refresh passed; exact temporary fixtures removed.
+
+The production API schema lacks all eight required optimization/write/migration RPCs. Required SQL must precede the new client. Checkpoint 9 preparation is complete; checkpoint 3 still needs an Android device, and checkpoint 10 still needs gated rollout and subsequent actual-usage observation. No production records or objects were changed. Generated variants, business backups and credentials remain private and Git-ignored.

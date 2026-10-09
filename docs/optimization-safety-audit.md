@@ -30,3 +30,7 @@ Catalogue and directories still load all metadata in bounded transport batches; 
 Findings 1–2 addressed for the updated client by migration 202610090001 and operation-token retries; SQL rollback/retry/access tests passed. Product deletion changes only the affected component arrays. Old clients retain their original behavior and arbitrary concurrent combo saves still require broader edit-conflict handling. Retry tokens are tab-scoped and an abandoned uncertain request requires reconciliation; this is not an exactly-once guarantee across devices.
 
 Findings 3–4 addressed: independent selected-order refresh and pre-publication date guard. Regression tests cover late responses, failed reads, deletion, and a filter change mid-request. All 25 Node tests and the static build passed. These changes are approved for local integration; findings 5–6 continue to block production release approval.
+
+## Release-tool review — 9 October 2026
+
+Finding 5 preparation gaps addressed: separate production-capable runner, full catalogue/history paging, source/remote hashes, original bytes outside Supabase, actual production inventory and dry run. Local apply/retry/rollback/corruption tests pass. Production execution is not approved: required RPCs are absent, device tests remain, and the latest user authorization covers read-only production work. The business exports are rechecked application-table snapshots, not a complete transactional database backup. See production-readiness-20261009.md for exact scope and remaining gates.
