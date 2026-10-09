@@ -87,3 +87,9 @@ See docs/optimization-safety-audit.md. Full local regression passed, but release
 Atomic inventory/quotation RPCs and actor-scoped operation receipts now protect retries from duplicate stock movements/orders. Client upsert, quotation creation and combo link commit together; inventory movement and reorder setting commit together. Product deletion updates only affected combo component arrays in its transaction, so a history restriction rolls back the whole deletion. Client retry tokens survive tab reloads in sessionStorage; confirmed SQL errors release them, unknown network outcomes retain them. A changed intent is deliberately blocked until the original request is retried. This is same-tab retry protection, not cross-device deduplication or automatic reconciliation of abandoned forms. Older app versions still use their original write paths.
 
 Principal review: approved for local integration. 21 Node tests and static build passed; rollback-only SQL tests passed duplicate retries, changed input rejection, inventory/client rollback, failed/successful product deletion and receipt privileges. Migration 202610090001 is required before deploying the new client. Production and device release gates remain open.
+
+## Refresh correctness checkpoint — 9 October 2026
+
+Open order detail is refreshed independently when pagination removes its row from the loaded page. Deleted records close the dialog; failed reads close stale actions and explain how to reopen. Responses from an old account or different selection are discarded. Date-filter identity is validated before any hydration publication.
+
+Principal review: approved for local integration. All 25 Node tests and static build passed, including page-two detail, deletion/read failure, late response rejection and filter changes during hydration. Production remains unchanged.

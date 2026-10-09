@@ -8,7 +8,7 @@ function fixture() {
   const rows = { library_items:[{id:'p',kind:'product',name:'P'},{id:'c',kind:'combo',name:'C'}], orders:[{id:'o'}], clients:[{id:'client'}] };
   const response = name => { calls.push(name); return { data: rows[name] || [], error: failures.has(name) ? { message:'test failure' } : null }; };
   const db = { from: name => { const chain = { select:()=>chain, order:()=>chain, eq:()=>chain, limit:()=>chain, gt:()=>chain, then:(yes,no)=>Promise.resolve(response(name)).then(yes,no) }; return chain; }, rpc:name=>{ const chain={order:()=>chain,limit:()=>chain,gt:()=>chain,then:(yes,no)=>Promise.resolve(response(name)).then(yes,no)};return chain; } };
-  const c = vm.createContext({ db, ordersFrom:'', ordersTo:'', orderSummary:{},orderHasMore:false,orderRevision:0,orderPageQuery:()=>Promise.resolve(response('orders')), accessGranted:true, products:[],combos:[],orders:[],clients:[],vendors:[],occasionTypes:[],defaultOccasionTypes:[],expenseClaims:[],expensePolicies:[],expenseAdmins:[],productFromRow:x=>x,comboFromRow:x=>x,orderFromRow:x=>x,syncOccasionLists:()=>{},renderAll:()=>{} });
+  const c = vm.createContext({ db, ordersFrom:'', ordersTo:'', orderSummary:{},orderHasMore:false,orderRevision:0,orderPageQuery:()=>Promise.resolve(response('orders')), accessGranted:true, products:[],combos:[],orders:[],clients:[],vendors:[],occasionTypes:[],defaultOccasionTypes:[],expenseClaims:[],expensePolicies:[],expenseAdmins:[],productFromRow:x=>x,comboFromRow:x=>x,orderFromRow:x=>x,syncOccasionLists:()=>{},renderAll:()=>{},refreshOpenOrderDetail:async()=>{} });
   vm.runInContext(app.slice(app.indexOf('const viewData ='), app.indexOf('\nasync function updateAccess')), c);
   return { c, calls, failures };
 }
@@ -47,4 +47,13 @@ test('queued navigation reuses recent datasets but writes force refresh', async 
  assert.equal(calls.filter(x=>x==='library_items').length,1);
  await c.hydrateFromSupabase(['items']);
  assert.equal(calls.filter(x=>x==='library_items').length,2);
+});
+
+test('changed date range rejects the entire response before publishing catalogue data', async () => {
+ const {c}=fixture();let release;
+ c.orderPageQuery=()=>new Promise(r=>release=r);
+ const task=c.hydrateFromSupabase(['items','orders']);
+ await new Promise(r=>setImmediate(r));
+ c.ordersFrom='2030-01-01';release({data:[],error:null});await task;
+ assert.equal(c.products.length,0);assert.equal(c.combos.length,0);
 });

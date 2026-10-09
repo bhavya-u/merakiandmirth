@@ -221,6 +221,7 @@ function hydrateFromSupabase(groups = Object.keys(dataQueries()), { reuse = fals
     selected.forEach(key => datasetReadTimes.set(datasetKey(key), Date.now()));
     syncOccasionLists();
     renderAll();
+    if (results.orders || results.items) await refreshOpenOrderDetail();
   };
   // Serialize refreshes so an older read cannot overwrite a later edit's refresh.
   const task = hydrationQueue.then(work, work);
@@ -876,6 +877,23 @@ function renderOrderDetail(order) { const stages = ['Quotation sent', 'Confirmed
 const baseRenderOrderDetail = renderOrderDetail;
 function addOrderInternalCosts(order) { if (!order.additionalCosts?.length) return; const fields = $('#orderDetail .order-detail-fields'); if (!fields) return; const section = document.createElement('section'); section.className = 'order-detail-section'; section.innerHTML = `<span>Internal cost adjustments</span><small>Team-only — not shown in the client quote.</small><ul class="quote-addons-list">${order.additionalCosts.map(item => `<li>${escapeHtml(item.label)} · ${money(item.amount)}</li>`).join('')}</ul>`; fields.before(section); }
 renderOrderDetail = function renderOrderDetailWithComboLink(order) { baseRenderOrderDetail(order); addOrderComboLink(order); addOrderInternalCosts(order); };
+async function refreshOpenOrderDetail() {
+  const id = openOrderId, epoch = dataEpoch, dialog = $('#orderDetailDialog');
+  if (!id || !dialog.open) return;
+  const loaded = orders.find(order => order.id === id);
+  if (loaded) { renderOrderDetail(loaded); return; }
+  try {
+    const result = await orderBaseQuery().eq('id', id).maybeSingle();
+    if (epoch !== dataEpoch || !accessGranted || openOrderId !== id || !dialog.open) return;
+    if (result.error) throw new Error(result.error.message);
+    if (!result.data) { dialog.close(); openOrderId = null; return; }
+    renderOrderDetail(orderFromRow(result.data));
+  } catch (error) {
+    if (epoch !== dataEpoch || openOrderId !== id || !dialog.open) return;
+    dialog.close(); openOrderId = null;
+    notify('Order details could not refresh. Reopen the order to see its current state.');
+  }
+}
 async function openOrderDetail(id) { let order = orders.find(item => item.id === id); if (!order) { const epoch = dataEpoch; const result = await orderBaseQuery().eq('id',id).single(); if (epoch !== dataEpoch || !accessGranted) return; if (result.error) return notify('Could not load order details.'); order = orderFromRow(result.data); } openOrderId = id; renderOrderDetail(order); $('#orderDetailDialog').showModal(); }
 function renderOrders() { const currentYear = currentYearDateRange(); $('#ordersFrom').value = ordersFrom; $('#ordersTo').value = ordersTo; const thisYearActive = ordersFrom === currentYear.from && ordersTo === currentYear.to; $('#ordersThisYear').textContent = thisYearActive ? 'This year · active' : 'This year'; $('#ordersThisYear').setAttribute('aria-pressed', String(thisYearActive)); const visible = filteredOrders(); $('#ordersCount').textContent = orderSummary.count; $('#ordersPacking').textContent = orderSummary.packing; $('#ordersDelivered').textContent = orderSummary.delivered; $('#ordersConversion').textContent = orderSummary.qualifying ? `${Math.round(orderSummary.converted / orderSummary.qualifying * 100)}%` : '0%'; $('#ordersProfit').textContent = money(orderSummary.profit); $('#ordersList').innerHTML = visible.map(order => `<article class="order-row"><div><p>${escapeHtml(order.status)}</p><h3>${escapeHtml(order.title)}</h3><span>${escapeHtml(order.customerName || order.comboName)} · ${escapeHtml(order.code)} · ${escapeHtml(order.created)}</span></div><div><span>Quote total</span><b>${money(order.total)}</b></div><div><span>Realised profit</span><b>${order.profitRealised ? money(order.profit) : 'Pending'}</b></div><div class="order-actions"><span>${order.quantity} curated sets${order.eventDate ? ` · Event ${escapeHtml(formattedDate(order.eventDate))}` : ''}${order.deliveryDate ? ` · Delivery ${escapeHtml(formattedDate(order.deliveryDate))}` : ''}</span><button data-order-view="${order.id}" class="soft-btn">View details</button></div></article>`).join(''); let more = $('#ordersLoadMore'); if (!more) { more = document.createElement('button'); more.id = 'ordersLoadMore'; more.className = 'soft-btn'; more.onclick = loadMoreOrders; $('#ordersList').after(more); } more.hidden = !orderHasMore; more.disabled = orderPageLoading; more.textContent = orderPageLoading ? 'Loading…' : 'Load more orders'; $('#ordersEmpty').hidden = visible.length > 0; document.querySelectorAll('[data-order-view]').forEach(button => button.onclick = () => openOrderDetail(button.dataset.orderView)); if (openOrderId && $('#orderDetailDialog').open) { const openOrder = orders.find(order => order.id === openOrderId); if (openOrder) renderOrderDetail(openOrder); } }
 async function updateOrderStatus(id, status) { const { error } = await db.from('orders').update({ status }).eq('id', id); if (error) return notify(error.message); void dispatchTelegramNotifications(); await hydrateFromSupabase(['orders', 'items', 'clients']); }

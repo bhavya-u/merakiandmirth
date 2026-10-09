@@ -24,3 +24,9 @@ Previous browser tests verified 50→62 order pagination and 50→61 expense pag
 ## Optimization limitations still applicable
 
 Catalogue and directories still load all metadata in bounded transport batches; they do not implement progressive server-side search or bound total memory. Data reuse is 30 seconds and can display another user's changes with that delay. Monitoring is a documented procedure/calculator, not an installed alert service. Production egress reductions remain unmeasured.
+
+## Remediation review — 9 October 2026
+
+Findings 1–2 addressed for the updated client by migration 202610090001 and operation-token retries; SQL rollback/retry/access tests passed. Product deletion changes only the affected component arrays. Old clients retain their original behavior and arbitrary concurrent combo saves still require broader edit-conflict handling. Retry tokens are tab-scoped and an abandoned uncertain request requires reconciliation; this is not an exactly-once guarantee across devices.
+
+Findings 3–4 addressed: independent selected-order refresh and pre-publication date guard. Regression tests cover late responses, failed reads, deletion, and a filter change mid-request. All 25 Node tests and the static build passed. These changes are approved for local integration; findings 5–6 continue to block production release approval.
