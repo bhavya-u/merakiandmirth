@@ -48,7 +48,7 @@ Stopping retains local database data. To deliberately discard local test data an
 
 ## Limits of local validation
 
-The hosted CDN, provider quota enforcement, actual production traffic, real business records, and device-specific Android caching need separate production/device validation. The current dev server is Mac-browser-only; Android requires a separately reviewed debug-only network configuration, not changes to production cleartext rules.
+The hosted CDN, provider quota enforcement, actual production traffic, real business records, and device-specific Android caching need separate production/device validation. The browser dev server is Mac-only; the isolated Android test builder below provides a separate loopback-only test configuration without changing production cleartext rules.
 
 The larger performance implementation follows `supabase-optimization-plan.md`. This change establishes the test environment; it does not claim the egress reduction has been achieved.
 
@@ -76,3 +76,18 @@ Rollback: `node scripts/local/install-image-variants.mjs --rollback <batch-uuid>
 Rollback operates one product transaction at a time, reports conflicts and never restores prices or stock. Retain the external JSON backups and old Storage objects. An app user cannot invoke these service-role-only operations.
 
 Run `node scripts/local/test-image-migration-cli.mjs` for the command-level rollback/reapply test. It temporarily changes local fixture p00001, retains audit records, and restores its starting image. Do not edit that fixture concurrently. Use `--product <id>` on the installer to limit an apply/dry-run to one product. Rollback conflicts return exit code 1 and preserve later edits.
+
+## Isolated Android test APK
+
+`node scripts/local/build-android-test.mjs` builds a separate `Meraki Local` debug app under `.local/android-test/`. It copies the Android project, replaces only that copy's bundled web configuration, and uses application ID `com.merakiandmirth.workspace.local` so it does not replace the production app. Requires local Supabase, the installed Android SDK and JDK 21 (`JAVA_HOME`, with this Mac's Homebrew JDK as fallback).
+
+The copy includes local frontend libraries, a restrictive CSP, no remote fonts, Telegram disabled and a visible local-test banner. HTTP is allowed only for loopback in its Android network-security configuration; mixed content is enabled only inside this generated test copy to reach local Supabase from Capacitor's origin. Production Android sources/configuration retain their existing settings.
+
+With one USB-debugging device connected and authorized:
+
+```sh
+adb reverse tcp:54321 tcp:54321
+adb install -r .local/android-test/meraki-local-debug.apk
+```
+
+Launch **Meraki Local** and sign in with the local fixture account from `.local/test-accounts.json`. Check image scrolling/detail, upload/retry after disconnecting and reconnecting the local connection, quotation/catalogue PDF Save/Share, and warm image reuse. Never use production login credentials or the normal debug APK for this fixture workflow. Reverse forwarding must remain active while testing. Build success and archive inspection do not establish actual device behavior.

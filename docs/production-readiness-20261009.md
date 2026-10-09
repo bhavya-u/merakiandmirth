@@ -32,3 +32,5 @@ Unique new objects total 74,015,186 bytes. Preserving every existing object give
 5. Run a small production canary before the full batch; verify actual user access, totals and exports. Observe cached/uncached egress after deployment per egress-operations.md. Retain previous app and images for the rollback window.
 
 Private recovery artifacts are in `.local/production-release/20261009/`; administrator credentials are in the separate restricted `credentials.json` alongside that directory. Neither is committed or served by the local app. Keep this Mac's backup safe; it is outside Supabase but not off-site.
+
+Android preparation now includes a separately built and archive-verified `Meraki Local` APK at `.local/android-test/meraki-local-debug.apk`. It cannot replace the production app because its application ID differs. No device was connected for runtime verification; this does not close the Android gate.

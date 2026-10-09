@@ -1,0 +1,40 @@
+// Build an isolated test APK. Never edits the production Android project/config.
+import {cp,mkdir,readFile,writeFile,rm,symlink,realpath} from 'node:fs/promises';
+import {existsSync} from 'node:fs';
+import {basename,resolve} from 'node:path';
+import {execFileSync} from 'node:child_process';
+import {root,status} from './common.mjs';
+const settings=status(),staging=resolve(root,'.local/android-test'),android=`${staging}/android`;
+const java=process.env.JAVA_HOME || '/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home';
+if(!existsSync(`${java}/bin/java`))throw Error('Set JAVA_HOME to an installed JDK 21');
+execFileSync(process.execPath,[`${root}/scripts/build-web.mjs`],{cwd:root,stdio:'inherit'});
+await mkdir(staging,{recursive:true,mode:0o700});
+// Only this generated copy is disposable; production source remains untouched.
+await rm(android,{recursive:true,force:true});
+await cp(`${root}/android`,android,{recursive:true,filter:path=>!['build','.gradle','.git'].includes(basename(path))});
+const modules=`${staging}/node_modules`;
+if(existsSync(modules)) {if(await realpath(modules)!==await realpath(`${root}/node_modules`))throw Error('Unexpected test dependency path');}
+else await symlink(`${root}/node_modules`,modules,'dir');
+const assets=`${android}/app/src/main/assets`,web=`${assets}/public`;
+await rm(web,{recursive:true,force:true});await cp(`${root}/dist`,web,{recursive:true});
+await mkdir(`${web}/vendor`,{recursive:true});
+await cp(`${root}/node_modules/@supabase/supabase-js/dist/umd/supabase.js`,`${web}/vendor/supabase.js`);
+await writeFile(`${web}/supabase-config.js`,`window.SUPABASE_CONFIG = ${JSON.stringify({url:settings.API_URL,anonKey:settings.ANON_KEY,environment:'local',disableNotifications:true})};\n`);
+const csp="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' http://127.0.0.1:54321 data: blob:; connect-src 'self' http://127.0.0.1:54321 ws://127.0.0.1:54321; font-src 'self'; object-src 'none'; base-uri 'self'";
+let html=await readFile(`${web}/index.html`,'utf8');
+html=html.replace(/<link[^>]+https:\/\/fonts\.[^>]+>/g,'').replace('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2','vendor/supabase.js').replace('<head>',`<head>\n<meta http-equiv="Content-Security-Policy" content="${csp}">`).replace('<body class="auth-pending">','<body class="auth-pending"><div style="background:#fff3cd;padding:8px;text-align:center">LOCAL ANDROID TEST — sample data · Telegram disabled</div>');
+await writeFile(`${web}/index.html`,html);
+const cap=JSON.parse(await readFile(`${assets}/capacitor.config.json`,'utf8'));
+cap.appId='com.merakiandmirth.workspace.local';cap.appName='Meraki Local';cap.android={...cap.android,allowMixedContent:true};
+await writeFile(`${assets}/capacitor.config.json`,JSON.stringify(cap,null,2));
+const manifest=`${android}/app/src/main/AndroidManifest.xml`;
+await writeFile(manifest,(await readFile(manifest,'utf8')).replace('android:allowBackup="true"','android:allowBackup="false"\n        android:networkSecurityConfig="@xml/local_test_network"'));
+await mkdir(`${android}/app/src/main/res/xml`,{recursive:true});
+await writeFile(`${android}/app/src/main/res/xml/local_test_network.xml`,'<?xml version="1.0" encoding="utf-8"?><network-security-config><base-config cleartextTrafficPermitted="false"/><domain-config cleartextTrafficPermitted="true"><domain>127.0.0.1</domain><domain>localhost</domain></domain-config></network-security-config>');
+const gradle=`${android}/app/build.gradle`;
+await writeFile(gradle,(await readFile(gradle,'utf8')).replace('    buildTypes {','    buildTypes {\n        debug {\n            applicationIdSuffix ".local"\n            resValue "string", "app_name", "Meraki Local"\n            resValue "string", "title_activity_main", "Meraki Local"\n        }'));
+if(/https:\/\/[^\s'"<>]+\.supabase\.co/.test(await readFile(`${web}/supabase-config.js`,'utf8')))throw Error('Production configuration leaked into test bundle');
+execFileSync(`${android}/gradlew`,['-p',android,'assembleDebug','--console=plain'],{cwd:staging,env:{...process.env,JAVA_HOME:java},stdio:'inherit'});
+const apk=`${staging}/meraki-local-debug.apk`;
+await cp(`${android}/app/build/outputs/apk/debug/app-debug.apk`,apk);
+console.log(`Local-only APK: ${apk}\nBefore launching on a USB device: adb reverse tcp:54321 tcp:54321\nApp ID: com.merakiandmirth.workspace.local (separate from production).`);
