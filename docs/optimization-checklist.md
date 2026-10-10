@@ -5,14 +5,15 @@ Work proceeds in this order on the feature branch. Production rollout follows lo
 - [x] Measure cold/warm image downloads and implement image variants, lazy loading and cache-safe URLs (see image-performance-results.md).
 - [x] 1. Add private image migration history with atomic conditional apply/rollback; test conflicts, retries and access restrictions locally.
 - [x] 2. Integrate the local migration tool with history, verified uploads, external JSON backups and a dry-run/rollback command. Preserve old objects.
-- [ ] 3. Complete image release checks: interrupted uploads, saved PDF visual inspection and Android sharing.
+- [x] 3. Complete image release checks: interrupted uploads, saved PDF visual inspection and Android sharing.
 - [x] 4. Map screen data dependencies; replace whole-workspace reloads with screen-specific queries and targeted invalidation. Verify fresh data after edits and navigation.
 - [x] 5. Add pagination and explicit field selection to growing lists; preserve searches, totals, exports and sorting semantics.
 - [x] 6. Deduplicate in-flight reads and bound retries; cancel obsolete requests and handle quota restrictions without retry loops.
 - [x] 7. Add usage review procedure for cached/uncached egress separately, monthly projections and proposed 2.5 GB/category operating target. Do not represent alerts as spending caps.
 - [x] 8. Review optional data-saving mode against measured needs; retain detail/export quality on demand.
 - [x] 9. Prepare production inventory, external backup, dry run and release/rollback instructions. Verify production availability and release checks before migration.
-- [ ] 10. Roll out and compare actual production usage; retain previous app release and images through an agreed rollback window. Review orphan cleanup separately.
+- [x] 10a. Roll out and verify the optimized images, required migrations and internal Android client; retain originals and rollback history.
+- [ ] 10b. Observe actual cached/uncached egress over the usage cycle; review retention and cleanup separately.
 
 Migration history records only image references, never restores whole product rows. Rollback must not overwrite a subsequent edit. Service-role-only migration functions are not exposed to the app. An external backup remains necessary if the database is unavailable. Production mutations are not performed by the local scripts.
 
@@ -105,3 +106,8 @@ The production API schema lacks all eight required optimization/write/migration 
 ## Android preparation checkpoint — 9 October 2026
 
 Added `scripts/local/build-android-test.mjs`. It builds in an ignored copy with app ID `com.merakiandmirth.workspace.local`, label Meraki Local, loopback Supabase, local JS/CSP, disabled Telegram and test-only loopback network configuration. Production Android sources and configuration remain unchanged. Gradle debug build succeeded; APK archive/aapt inspection verified the distinct ID/label, local configuration, CSP and Filesystem/Share plugins. Principal review: approved as an isolated test build. `adb devices` is still empty, so checkpoint 3 remains incomplete for actual WebView/upload/PDF-sharing behavior. Installation instructions are in local-development.md. No production deployment was performed.
+
+
+## Release completion — 10 October 2026
+
+The user confirmed Android upload recovery and production login/catalogue/Orders checks. The rollout and final before/after verification passed. Principal review: approved for this internal Android release. Private operational evidence remains outside Git. See production-rollout-20261010.md. Actual monthly egress observation remains open.

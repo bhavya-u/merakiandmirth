@@ -1,6 +1,6 @@
 # Production image/performance rollout
 
-Status: READ-ONLY PREPARATION COMPLETED on 9 October 2026; deployment not executed. Production inventory, external backup and dry run are captured in docs/production-readiness-20261009.md. Android device verification and production-write authorization remain outstanding. All scripts under scripts/local are deliberately local-only; do not edit their host guard to deploy production.
+Status: PRODUCTION ROLLOUT VERIFIED on 10 October 2026. See docs/production-rollout-20261010.md for the sanitized release status. Detailed production verification evidence is retained privately. Actual usage observation remains ongoing. All scripts under scripts/local are deliberately local-only; do not edit their host guard to deploy production.
 
 ## Release gates
 
@@ -37,4 +37,4 @@ Restore the prior app release if necessary. Keep additive schemas in place. For 
 
 ## Known limits
 
-A separate production-capable runner is shipped and documented in docs/release-runner.md; production apply/rollback have not been executed. Production apply and monitoring are not claimed completed. Catalogue and directory metadata still load fully through bounded batches to preserve full search/export semantics; a server-search/selected-ID design is a future scale change, not a benefit claimed by this release. Public object traffic and new devices remain potential quota consumers.
+A separate production-capable runner is shipped and documented in docs/release-runner.md. Production apply is verified; guarded rollback was tested locally but has not been needed in production. Actual post-release usage monitoring is still required. Catalogue and directory metadata still load fully through bounded batches to preserve full search/export semantics; a server-search/selected-ID design is a future scale change, not a benefit claimed by this release. Public object traffic and new devices remain potential quota consumers.
