@@ -7,7 +7,8 @@ import {root,status} from './common.mjs';
 const settings=status(),staging=resolve(root,'.local/android-test'),android=`${staging}/android`;
 const java=process.env.JAVA_HOME || '/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home';
 if(!existsSync(`${java}/bin/java`))throw Error('Set JAVA_HOME to an installed JDK 21');
-execFileSync(process.execPath,[`${root}/scripts/build-web.mjs`],{cwd:root,stdio:'inherit'});
+const testWeb=`${staging}/web-build`;
+execFileSync(process.execPath,[`${root}/scripts/build-web.mjs`],{cwd:root,stdio:'inherit',env:{...process.env,WEB_BUILD_OUTPUT:testWeb}});
 await mkdir(staging,{recursive:true,mode:0o700});
 // Only this generated copy is disposable; production source remains untouched.
 await rm(android,{recursive:true,force:true});
@@ -16,7 +17,7 @@ const modules=`${staging}/node_modules`;
 if(existsSync(modules)) {if(await realpath(modules)!==await realpath(`${root}/node_modules`))throw Error('Unexpected test dependency path');}
 else await symlink(`${root}/node_modules`,modules,'dir');
 const assets=`${android}/app/src/main/assets`,web=`${assets}/public`;
-await rm(web,{recursive:true,force:true});await cp(`${root}/dist`,web,{recursive:true});
+await rm(web,{recursive:true,force:true});await cp(testWeb,web,{recursive:true});
 await mkdir(`${web}/vendor`,{recursive:true});
 await cp(`${root}/node_modules/@supabase/supabase-js/dist/umd/supabase.js`,`${web}/vendor/supabase.js`);
 await writeFile(`${web}/supabase-config.js`,`window.SUPABASE_CONFIG = ${JSON.stringify({url:settings.API_URL,anonKey:settings.ANON_KEY,environment:'local',disableNotifications:true})};\n`);

@@ -10,9 +10,9 @@ const manifest = JSON.parse(await readFile(`${root}/.local/image-variants/manife
 const names = await readdir(`${root}/assets/catalogue`);
 const products = manifest.slice(0, 12).map(p => ({ ...p, name: names.find(n => n.endsWith(`--${p.id}.png`)).split('--')[0] }));
 const tiles = {};
-for (const p of products) tiles[p.id] = 'data:image/png;base64,' + (await sharp(p.variants.export.file).resize(420, 420, { fit: 'contain', background: '#ffffff' }).png().toBuffer()).toString('base64');
+for (const p of products) tiles[p.id] = 'data:image/png;base64,' + (await sharp(p.variants.export.file).resize(720, 720, { fit: 'contain', background: '#ffffff' }).png().toBuffer()).toString('base64');
 const logo = 'data:image/jpeg;base64,' + (await sharp(`${root}/assets/meraki-mirth-logo-original.png`).flatten({ background: '#ffffff' }).jpeg().toBuffer()).toString('base64');
-const combos = [{name:'Local Celebration Set',items:products.slice(0,3)}, {name:'Six Product Test Set',items:products.slice(0,6)}, {name:'Twelve Product Test Set',items:products}];
+const combos = [{name:'Single Product Test Set',items:products.slice(0,1)}, {name:'Local Celebration Set',items:products.slice(0,3)}, {name:'Six Product Test Set',items:products.slice(0,6)}, {name:'Twelve Product Test Set',items:products}];
 const context = vm.createContext({ window: { jspdf: { jsPDF } }, COMBO_COLLAGE_PRODUCTS:6,
   comboProducts: c=>c.items, comboNeedsProductPage:c=>c.items.length>6,
   catalogueWelcome:()=> 'Thank you for considering Meraki & Mirth. These sample sets exercise the optimized image export.',

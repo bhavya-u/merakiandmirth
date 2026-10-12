@@ -1,0 +1,35 @@
+import {status,sql} from './common.mjs';status();
+console.log(sql(`begin;
+do $$
+declare owner uuid; reviewer uuid; c public.expense_claims%rowtype; op uuid:=gen_random_uuid(); result jsonb; failed boolean; snapshot jsonb;
+begin
+ select id into owner from auth.users where email='owner@example.test';select id into reviewer from auth.users where email='staff@example.test';
+ update public.app_members set can_approve_expenses=true where email='staff@example.test';
+ perform set_config('request.jwt.claims',jsonb_build_object('sub',owner,'email','owner@example.test','role','authenticated')::text,true);
+ c:=public.submit_expense_claim('purchase','Adjustment test','','', '',null,100,'');
+ result:=public.adjust_expense_claim(op,c.id,c.revision,25,'Extra transport');
+ if result<>public.adjust_expense_claim(op,c.id,c.revision,25,'Extra transport') then raise exception 'Retry differs'; end if;
+ select * into c from public.expense_claims where id=c.id;
+ if c.amount<>125 or c.extra_amount<>25 or c.revision<>1 or (select count(*) from public.expense_claim_adjustments where claim_id=c.id)<>1 then raise exception 'Incorrect adjustment/retry'; end if;
+ failed:=false;begin perform public.adjust_expense_claim(gen_random_uuid(),c.id,0,40,'Stale');exception when others then failed:=true;end;if not failed then raise exception 'Stale edit accepted';end if;
+ perform set_config('request.jwt.claims',jsonb_build_object('sub',reviewer,'email','staff@example.test','role','authenticated')::text,true);
+ failed:=false;begin perform public.adjust_expense_claim(gen_random_uuid(),c.id,1,40,'Not owner');exception when others then failed:=true;end;if not failed then raise exception 'Other claimant edit accepted';end if;
+ failed:=false;begin perform public.review_expense_claim_versioned(c.id,'approved',0,'');exception when others then failed:=true;end;if not failed then raise exception 'Stale approval accepted';end if;
+ failed:=false;begin perform public.review_expense_claim(c.id,'approved','');exception when others then failed:=true;end;if not failed then raise exception 'Legacy stale approval accepted';end if;
+ c:=public.review_expense_claim_versioned(c.id,'approved',1,'');
+ perform set_config('request.jwt.claims',jsonb_build_object('sub',owner,'email','owner@example.test','role','authenticated')::text,true);
+ perform public.adjust_expense_claim(gen_random_uuid(),c.id,c.revision,30,'Correct extra total');select * into c from public.expense_claims where id=c.id;
+ if c.amount<>130 or c.approval_status<>'pending' or c.approved_at is not null then raise exception 'Approval was not reset';end if;
+ failed:=false;begin perform public.review_expense_claim_versioned(c.id,'approved',c.revision,'');exception when others then failed:=true;end;if not failed then raise exception 'Self approval accepted';end if;
+ perform set_config('request.jwt.claims',jsonb_build_object('sub',reviewer,'email','staff@example.test','role','authenticated')::text,true);
+ c:=public.review_expense_claim_versioned(c.id,'approved',c.revision,'');c:=public.settle_expense_claim_versioned(c.id,c.revision,'');
+ perform set_config('request.jwt.claims',jsonb_build_object('sub',owner,'email','owner@example.test','role','authenticated')::text,true);
+ failed:=false;begin perform public.adjust_expense_claim(gen_random_uuid(),c.id,c.revision,40,'Settled');exception when others then failed:=true;end;if not failed then raise exception 'Settled edit accepted';end if;
+ insert into public.expense_claims(submitted_by_id,submitted_by_name,expense_type,description,amount,created_at) select owner,'Export fixture','purchase','Export fixture',1,'2025-01-01T18:30:00Z' from generate_series(1,61);
+ snapshot:=public.export_expense_settlement('2025-01-02','2025-01-02');if jsonb_array_length(snapshot->'claims')<>61 then raise exception 'Export incomplete or India date bounds incorrect';end if;
+ if has_function_privilege('anon','public.adjust_expense_claim(uuid,uuid,integer,numeric,text)','execute') or has_function_privilege('anon','public.export_expense_settlement(date,date)','execute') then raise exception 'Anonymous access';end if;
+ perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000001","email":"outsider@example.test","role":"authenticated"}',true);
+ execute 'set local role authenticated';
+ if jsonb_array_length(public.export_expense_settlement(null,null)->'claims')<>0 then raise exception 'Outsider export leaked';end if;
+end $$;
+rollback;`));console.log('PASS: retry, audit, ownership, revision conflicts, reapproval, legacy guards, settled lock, complete/date-bounded export and outsider RLS; fixtures rolled back.');

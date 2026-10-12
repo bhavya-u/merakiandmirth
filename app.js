@@ -38,7 +38,7 @@ async function fetchWorkspaceRead(resource, options) {
 window.fetch = async (resource, options = {}) => {
   const requestUrl = resource instanceof Request ? resource.url : String(resource);
   const method = (options.method || (resource instanceof Request ? resource.method : 'GET')).toUpperCase();
-  const isReadOnlyRpc = /\/rest\/v1\/rpc\/(workspace_access_state|workspace_expense_people|workspace_expense_summary|workspace_order_summary|workspace_client_order_summary)(?:\?|$)/.test(requestUrl);
+  const isReadOnlyRpc = /\/rest\/v1\/rpc\/(workspace_access_state|workspace_expense_people|workspace_expense_summary|export_expense_settlement|workspace_order_summary|workspace_client_order_summary)(?:\?|$)/.test(requestUrl);
   const isSupabaseWrite = !isReadOnlyRpc && /\/((rest|storage|functions)\/v1)\//.test(requestUrl) && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
   if (requestUrl.startsWith(`${config?.url}/rest/v1/`) && (method === 'GET' || isReadOnlyRpc)) return fetchWorkspaceRead(resource, options);
   if (!isSupabaseWrite) return browserFetch(resource, options);
@@ -158,7 +158,7 @@ function refreshOrderRange() {
   orderRevision++;
   void hydrateFromSupabase(['orders']).catch(error => notify(`Could not refresh orders: ${error.message}`));
 }
-const expenseFields = 'id,submitted_by_id,submitted_by_name,expense_type,description,vendor,delivery_mode,delivery_provider,distance_km,rate_per_km,amount,note,approval_status,approved_by_name,settled_at,created_at';
+const expenseFields = 'id,submitted_by_id,submitted_by_name,expense_type,description,vendor,delivery_mode,delivery_provider,distance_km,rate_per_km,amount,extra_amount,adjustment_reason,revision,note,approval_status,approved_by_name,settled_at,created_at';
 let expenseSummary = { count: 0, pending: 0, approved: 0, settled: 0, people: [] };
 let expenseHasMore = false;
 let expensePageLoading = false;
@@ -467,7 +467,7 @@ function renderCatalogueChoices() { const occasion = $('#catalogueOccasion').val
 function comboProducts(combo) { return combo.productIds.map(id => products.find(product => product.id === id)).filter(Boolean); }
 function comboNeedsProductPage(combo) { return comboProducts(combo).length > COMBO_COLLAGE_PRODUCTS; }
 function catalogueProductStrip(items, showAll = false) { const displayed = showAll ? items : items.slice(0, COMBO_COLLAGE_PRODUCTS); const remaining = Math.max(0, items.length - displayed.length); return `<div class="catalogue-product-strip product-count-${displayed.length}">${displayed.map((product, index) => `${index ? '<i aria-hidden="true">+</i>' : ''}<figure>${imageMarkup(product, 'catalogue-product-image')}</figure>`).join('')}${remaining ? `<figure class="catalogue-product-more" aria-label="${remaining} more products"><b>+${remaining}</b><span>MORE</span></figure>` : ''}</div>`; }
-function catalogueSheetCard(combo, index = 0, expandedProducts = false) { const items = comboProducts(combo); return `<article class="catalogue-sheet-card${expandedProducts ? ' expanded-products' : ''}"><span class="catalogue-combo-number" aria-label="Combo ${index + 1}">${index + 1}</span><div class="catalogue-sheet-images">${catalogueProductStrip(items, expandedProducts)}</div><div class="catalogue-sheet-copy"><p>${escapeHtml(tagLabel(normalizeTag(combo.occasion)))}</p><h2>${escapeHtml(combo.name)}</h2><strong>${money(liveComboRate(combo))} <small>PER COMBO</small></strong><span>INCLUSIONS</span><ul class="${items.length > COMBO_COLLAGE_PRODUCTS ? 'many-inclusions' : ''}">${items.map(product => `<li>${escapeHtml(product.name)}</li>`).join('')}</ul></div></article>`; }
+function catalogueSheetCard(combo, index = 0, expandedProducts = false) { const items = comboProducts(combo); return `<article class="catalogue-sheet-card${expandedProducts ? ' expanded-products' : ''}"><span class="catalogue-combo-number" aria-label="Combo ${index + 1}">${index + 1}</span><div class="catalogue-sheet-images" style="--gallery-columns:${catalogueGalleryLayout(items.length).columns};--gallery-tile:${catalogueGalleryLayout(items.length).tileSize}mm">${catalogueProductStrip(items, expandedProducts)}</div><div class="catalogue-sheet-copy"><p>${escapeHtml(tagLabel(normalizeTag(combo.occasion)))}</p><h2>${escapeHtml(combo.name)}</h2><strong>${money(liveComboRate(combo))} <small>PER COMBO</small></strong><span>INCLUSIONS</span><ul class="${items.length > COMBO_COLLAGE_PRODUCTS ? 'many-inclusions' : ''}">${items.map(product => `<li>${escapeHtml(product.name)}</li>`).join('')}</ul></div></article>`; }
 function catalogueWelcome() { const clientName = $('#catalogueClientName').value.trim(); return `Thank you${clientName ? `, ${clientName}` : ''}, for considering Meraki & Mirth. We would be truly delighted to add a little more joy to your celebration. We have curated these packages especially for you, with every detail chosen to make the moment feel even more special.`; }
 function catalogueTelegramMessage(chosen, heading) { const clientName = $('#catalogueClientName').value.trim(); return `Meraki & Mirth — Catalogue shared\n\nClient: ${clientName || 'General catalogue'}\nCollection: ${heading}\nCombos included (${chosen.length}): ${chosen.map(combo => combo.name).join(' · ')}\nPrepared by: ${user?.email || 'Meraki & Mirth team'}`; }
 async function dispatchTelegramNotifications() { if (!db || config?.disableNotifications) return; try { const { error } = await db.functions.invoke('telegram-notifications'); if (error) console.warn('Telegram notifications are queued and will retry shortly.', error.message); } catch (error) { console.warn('Telegram notifications are queued and will retry shortly.', error); } }
@@ -562,7 +562,7 @@ async function pdfTileData(product) {
       image.onload = () => {
         try {
           const canvas = document.createElement('canvas');
-          const size = 420, radius = 34;
+          const size = Math.min(720, Math.max(image.naturalWidth, image.naturalHeight)), radius = size * .08;
           canvas.width = size; canvas.height = size;
           const context = canvas.getContext('2d');
           // Leave the corners transparent. The PDF tile beneath supplies the
@@ -571,7 +571,7 @@ async function pdfTileData(product) {
           context.beginPath();
           context.moveTo(radius, 0); context.arcTo(size, 0, size, size, radius); context.arcTo(size, size, 0, size, radius); context.arcTo(0, size, 0, 0, radius); context.arcTo(0, 0, size, 0, radius); context.closePath();
           context.clip();
-          const scale = Math.max(size / image.naturalWidth, size / image.naturalHeight);
+          const scale = Math.min(size / image.naturalWidth, size / image.naturalHeight);
           const drawWidth = image.naturalWidth * scale, drawHeight = image.naturalHeight * scale;
           context.drawImage(image, (size - drawWidth) / 2, (size - drawHeight) / 2, drawWidth, drawHeight);
           resolve(canvas.toDataURL('image/png'));
@@ -607,24 +607,13 @@ async function drawPdfProductGallery(doc, items, { centerX = 105, top, columns, 
   return rows * tileSize + Math.max(0, rows - 1) * gap;
 }
 async function shareNativePdf(doc, filename, title) { const filesystem = window.Capacitor?.Plugins?.Filesystem; const share = window.Capacitor?.Plugins?.Share; if (!filesystem || !share) throw new Error('PDF sharing is not available in this app build. Please update the Android app and try again.'); const data = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1]); reader.onerror = reject; reader.readAsDataURL(doc.output('blob')); }); const file = await filesystem.writeFile({ path: filename, data, directory: 'CACHE', recursive: true }); await share.share({ title, text: `${title} — Meraki & Mirth`, url: file.uri, dialogTitle: 'Save or share your PDF' }); }
-function cataloguePages(chosen) {
-  const pages = [];
-  let pairedPage = [];
-  for (const combo of chosen) {
-    if (comboNeedsProductPage(combo)) {
-      if (pairedPage.length) pages.push(pairedPage);
-      pairedPage = [];
-      pages.push([combo]);
-      continue;
-    }
-    pairedPage.push(combo);
-    if (pairedPage.length === 2) {
-      pages.push(pairedPage);
-      pairedPage = [];
-    }
-  }
-  if (pairedPage.length) pages.push(pairedPage);
-  return pages;
+function cataloguePages(chosen) { return chosen.map(combo => [combo]); }
+function catalogueGalleryLayout(count) {
+  const columns = count <= 2 ? Math.max(1, count) : count <= 9 ? 3 : 4;
+  const rows = Math.max(1, Math.ceil(count / columns));
+  const gap = 4;
+  const tileSize = Math.min(86, (164 - (columns - 1) * gap) / columns, (110 - (rows - 1) * gap) / rows);
+  return { columns, tileSize, gap };
 }
 async function drawNativeCataloguePage(doc, pageCombos, heading, totalCombos, pageNumber, pageCount, logo) {
   pdfFrame(doc);
@@ -642,8 +631,8 @@ async function drawNativeCataloguePage(doc, pageCombos, heading, totalCombos, pa
   const gap = 6;
   const y = Math.max(firstPage ? 69 : 62, introEnd + 7);
   const startIndex = pageCombos._offset || 0;
-  const expandedPage = pageCombos.length === 1 && comboNeedsProductPage(pageCombos[0]);
-  const cardHeight = expandedPage ? 198 : pageCombos.length === 1 ? 119 : 94;
+  const expandedPage = true;
+  const cardHeight = 270 - y;
   for (let index = 0; index < pageCombos.length; index += 1) {
     const combo = pageCombos[index];
     const items = comboProducts(combo);
@@ -658,12 +647,7 @@ async function drawNativeCataloguePage(doc, pageCombos, heading, totalCombos, pa
     doc.setLineWidth(.55);
     doc.circle(x, cardY, 4.25, 'FD');
     pdfCenteredText(doc, String(startIndex + index + 1), x, cardY + .1, { style: 'bold', size: 6.6, color: [255, 255, 255] });
-    const shownItems = expandedPage ? items : items.slice(0, COMBO_COLLAGE_PRODUCTS);
-    const imageRows = expandedPage ? 2 : 1;
-    const imageColumns = expandedPage ? Math.ceil(shownItems.length / imageRows) : shownItems.length;
-    const imageSize = expandedPage ? 25 : 20;
-    const imageGap = expandedPage ? 4 : 4;
-    const galleryHeight = await drawPdfProductGallery(doc, shownItems, { centerX: x + width / 2, top: cardY + 9, columns: imageColumns, tileSize: imageSize, gap: imageGap });
+    const galleryHeight = await drawPdfProductGallery(doc, items, { centerX: x + width / 2, top: cardY + 9, ...catalogueGalleryLayout(items.length) });
     let textY = cardY + 14 + galleryHeight;
     textY = pdfText(doc, tagLabel(normalizeTag(combo.occasion)).toUpperCase(), x + 7, textY, width - 14, { style: 'bold', size: 6.4, color: pdfPalette.gold });
     textY = pdfText(doc, combo.name, x + 7, textY + 2, width - 14, { font: 'times', style: 'bold', size: expandedPage ? 16 : 13.5, color: pdfPalette.ink, line: 1.05 });
@@ -672,7 +656,7 @@ async function drawNativeCataloguePage(doc, pageCombos, heading, totalCombos, pa
     const listTop = textY + 10, columns = expandedPage ? 3 : 2, rows = Math.ceil(items.length / columns), columnWidth = (width - 17) / columns;
     for (let column = 0; column < columns; column += 1) {
       let listY = listTop;
-      for (const item of items.slice(column * rows, (column + 1) * rows)) listY = pdfText(doc, `- ${item.name}`, x + 8 + column * columnWidth, listY, columnWidth - 4, { size: expandedPage ? 6.9 : 6.4, color: pdfPalette.muted, line: 1.12 }) + .7;
+      for (const item of items.slice(column * rows, (column + 1) * rows)) listY = pdfText(doc, `- ${item.name}`, x + 8 + column * columnWidth, listY, columnWidth - 4, { size: 8.5, color: pdfPalette.muted, line: 1.12 }) + .7;
     }
   }
 }
@@ -696,7 +680,7 @@ function catalogueSheetPage(pageCombos, heading, totalCombos, pageIndex, pageCou
   const firstPage = pageIndex === 0;
   const welcome = firstPage ? catalogueWelcome() : `A closer look at the thoughtful sets curated especially for you. Page ${pageIndex + 1} of ${pageCount}.`;
   const marker = firstPage ? `${totalCombos} curated ${totalCombos === 1 ? 'combo' : 'combos'}` : `Page ${pageIndex + 1} of ${pageCount}`;
-  const expandedProducts = pageCombos.length === 1 && comboNeedsProductPage(pageCombos[0]);
+  const expandedProducts = true;
   return `<section class="print-catalogue-sheet"><header><img src="assets/meraki-mirth-logo-original.png" alt="Meraki &amp; Mirth"><div><p>MERAKI &amp; MIRTH</p><h1>${escapeHtml(heading)}</h1><em class="catalogue-welcome">${escapeHtml(welcome)}</em></div><b>${marker}</b></header><div class="catalogue-sheet-grid page-count-${pageCombos.length}${expandedProducts ? ' expanded-products-page' : ''}">${pageCombos.map((combo, index) => catalogueSheetCard(combo, offset + index, expandedProducts)).join('')}</div><footer><span>✿</span> MERAKI &amp; MIRTH <em>For the moments worth thanking.</em></footer></section>`;
 }
 async function exportCatalogue() {
@@ -977,11 +961,12 @@ function renderExpenses() {
     return `<article class="expense-balance-card"><div><span>${escapeHtml(admin.display_name)}</span>${admin.can_approve_expenses ? '<em>Approver</em>' : ''}</div><b>${money(balance.approved)}</b><small>To settle · ${money(balance.pending)} awaiting approval</small></article>`;
   }).join('');
   $('#expenseClaimCount').textContent = expenseSummary.count ? `Showing ${expenseClaims.length} of ${expenseSummary.count} claims` : '';
-  $('#expenseList').innerHTML = expenseClaims.map(claim => `<article class="expense-row"><div class="expense-row-main"><p>${escapeHtml(claim.submitted_by_name)} · ${escapeHtml(expenseDate(claim.created_at))}</p><h3>${escapeHtml(claim.description)}</h3><span>${escapeHtml(expenseDetail(claim))}${claim.note ? ` · ${escapeHtml(claim.note)}` : ''}</span></div><b>${money(claim.amount)}</b><span class="expense-status ${escapeHtml(claim.approval_status)}${claim.settled_at ? ' settled' : ''}">${escapeHtml(expenseStatusLabel(claim))}</span><div class="expense-actions">${canReviewExpense(claim) ? `<button class="soft-btn" data-expense-review="approved" data-expense-id="${claim.id}">Approve</button><button class="text-btn" data-expense-review="rejected" data-expense-id="${claim.id}">Reject</button>` : ''}${currentExpenseAdmin()?.can_approve_expenses && claim.approval_status === 'approved' && !claim.settled_at ? `<button class="soft-btn" data-expense-settle="${claim.id}">Mark settled</button>` : ''}${claim.approved_by_name ? `<small>Reviewed by ${escapeHtml(claim.approved_by_name)}</small>` : ''}</div></article>`).join('');
+  $('#expenseList').innerHTML = expenseClaims.map(claim => `<article class="expense-row"><div class="expense-row-main"><p>${escapeHtml(claim.submitted_by_name)} · ${escapeHtml(expenseDate(claim.created_at))}</p><h3>${escapeHtml(claim.description)}</h3><span>${escapeHtml(expenseDetail(claim))}${claim.note ? ` · ${escapeHtml(claim.note)}` : ''}</span></div><b>${money(claim.amount)}</b><span class="expense-status ${escapeHtml(claim.approval_status)}${claim.settled_at ? ' settled' : ''}">${escapeHtml(expenseStatusLabel(claim))}</span><div class="expense-actions">${canAdjustExpense(claim) ? `<button class="soft-btn" data-expense-adjust="${claim.id}">Edit extra amount</button>` : ''}${claim.adjustment_reason ? `<small>Original ${money(Number(claim.amount)-Number(claim.extra_amount))} + extra ${money(claim.extra_amount)} · ${escapeHtml(claim.adjustment_reason)}</small>` : ''}${canReviewExpense(claim) ? `<button class="soft-btn" data-expense-review="approved" data-expense-id="${claim.id}">Approve</button><button class="text-btn" data-expense-review="rejected" data-expense-id="${claim.id}">Reject</button>` : ''}${currentExpenseAdmin()?.can_approve_expenses && claim.approval_status === 'approved' && !claim.settled_at ? `<button class="soft-btn" data-expense-settle="${claim.id}">Mark settled</button>` : ''}${claim.approved_by_name ? `<small>Reviewed by ${escapeHtml(claim.approved_by_name)}</small>` : ''}</div></article>`).join('');
   let more = $('#expenseLoadMore');
   if (!more) { more = document.createElement('button'); more.id = 'expenseLoadMore'; more.className = 'soft-btn'; more.onclick = loadMoreExpenses; $('#expenseList').after(more); }
   more.hidden = !expenseHasMore; more.disabled = expensePageLoading; more.textContent = expensePageLoading ? 'Loading…' : 'Load more expenses';
   $('#expenseEmpty').hidden = expenseClaims.length > 0;
+  document.querySelectorAll('[data-expense-adjust]').forEach(button => button.onclick = () => openExpenseAdjustment(button.dataset.expenseAdjust));
   document.querySelectorAll('[data-expense-review]').forEach(button => button.onclick = () => reviewExpense(button.dataset.expenseId, button.dataset.expenseReview));
   document.querySelectorAll('[data-expense-settle]').forEach(button => button.onclick = () => settleExpense(button.dataset.expenseSettle));
 }
@@ -1016,13 +1001,70 @@ async function saveExpense(form) {
 }
 async function reviewExpense(id, action) {
   if (action === 'rejected' && !confirm('Reject this expense claim?')) return;
-  const { error } = await db.rpc('review_expense_claim', { p_claim_id: id, p_action: action, p_note: '' });
+  const { error } = await db.rpc('review_expense_claim_versioned', { p_claim_id: id, p_expected_revision: expenseClaims.find(c=>c.id===id)?.revision, p_action: action, p_note: '' });
   if (error) return notify(error.message); await hydrateFromSupabase(['expenses']);
 }
 async function settleExpense(id) {
   if (!confirm('Mark this approved expense as settled?')) return;
-  const { error } = await db.rpc('settle_expense_claim', { p_claim_id: id, p_note: '' });
+  const { error } = await db.rpc('settle_expense_claim_versioned', { p_claim_id: id, p_expected_revision: expenseClaims.find(c=>c.id===id)?.revision, p_note: '' });
   if (error) return notify(error.message); await hydrateFromSupabase(['expenses']);
+}
+
+let editingExpense = null;
+let expenseAdjustmentBusy = false;
+let excelLibrary;
+function canAdjustExpense(claim) { return claim.submitted_by_id === user?.id && !claim.settled_at; }
+function openExpenseAdjustment(id) {
+ if(expenseAdjustmentBusy)return;
+ const claim=expenseClaims.find(c=>c.id===id);if(!claim||!canAdjustExpense(claim))return;
+ editingExpense={...claim};const form=$('#expenseAdjustmentForm');form.reset();form.elements.extraAmount.value=claim.extra_amount||0;
+ $('#expenseAdjustmentDescription').textContent=claim.description;$('#expenseOriginalAmount').textContent=money(Number(claim.amount)-Number(claim.extra_amount||0));
+ updateExpenseAdjustmentTotal();$('#expenseAdjustmentDialog').showModal();
+}
+function updateExpenseAdjustmentTotal() { if(editingExpense)$('#expenseRevisedAmount').textContent=money(Number(editingExpense.amount)-Number(editingExpense.extra_amount||0)+Number($('#expenseAdjustmentForm').elements.extraAmount.value||0)); }
+async function saveExpenseAdjustment(form) {
+ if(!assertAccess()||!editingExpense||expenseAdjustmentBusy)return;
+ const extra=Number(form.elements.extraAmount.value),reason=form.elements.reason.value.trim();
+ if(!Number.isFinite(extra)||extra<0||extra>999999999||Math.abs(extra*100-Math.round(extra*100))>1e-6||!reason)throw Error('Enter a valid extra amount and a reason.');
+ const intent={claim:editingExpense.id,revision:editingExpense.revision,extra,reason};
+ expenseAdjustmentBusy=true;const button=form.querySelector('[type="submit"]');button.disabled=true;$('#closeExpenseAdjustment').disabled=true;
+ try {
+  await writeOnce('expense-adjustment',intent,operation=>db.rpc('adjust_expense_claim',{p_operation:operation,p_claim_id:intent.claim,p_expected_revision:intent.revision,p_extra_amount:extra,p_reason:reason}));
+  $('#expenseAdjustmentDialog').close();editingExpense=null;await refreshAfterCommit(['expenses']);notify('Adjustment saved. Independent approval is required again.','success');
+ } finally {expenseAdjustmentBusy=false;button.disabled=false;$('#closeExpenseAdjustment').disabled=false;}
+}
+function openExpenseExport() {
+ const form=$('#expenseExportForm');form.reset();const date=new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});
+ form.elements.from.value=date.slice(0,7)+'-01';form.elements.to.value=date;form.elements.from.disabled=false;form.elements.to.disabled=false;$('#expenseExportDialog').showModal();
+}
+function loadExcelLibrary() {
+ if(window.ExcelJS)return Promise.resolve(window.ExcelJS);
+ if(!excelLibrary)excelLibrary=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='vendor/exceljs.min.js';script.onload=()=>resolve(window.ExcelJS);script.onerror=()=>{script.remove();excelLibrary=null;reject(Error('Could not load the Excel exporter. Try again.'));};document.head.append(script);});
+ return excelLibrary;
+}
+async function saveExportBlob(blob,filename,title) {
+ if(window.Capacitor?.isNativePlatform?.()) {
+  const filesystem=window.Capacitor.Plugins?.Filesystem,share=window.Capacitor.Plugins?.Share;
+  if(!filesystem||!share)throw Error('File sharing is unavailable in this app build.');
+  const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=()=>reject(Error('Could not read export.'));reader.readAsDataURL(blob);});
+  const file=await filesystem.writeFile({path:filename,data,directory:'CACHE',recursive:true});await share.share({title,url:file.uri,dialogTitle:'Save or share Excel'});
+ } else {const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=filename;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);}
+}
+async function exportExpenses(form) {
+ if(!assertAccess())return;const button=form.querySelector('[type="submit"]');if(button.disabled)return;
+ const from=form.elements.allHistory.checked?null:form.elements.from.value,to=form.elements.allHistory.checked?null:form.elements.to.value;
+ if(from&&to&&from>to)throw Error('Start date must not follow end date.');
+ const epoch=dataEpoch;button.disabled=true;button.textContent='Preparing…';
+ try {
+  const ExcelJS=await loadExcelLibrary();
+  const {data,error}=await db.rpc('export_expense_settlement',{p_from:from,p_to:to});if(error)throw error;
+  if(epoch!==dataEpoch||!accessGranted)throw Error('Your session changed. Please export again.');
+  const workbook=ExpenseExport.buildWorkbook(ExcelJS,data.claims,{from,to,generatedAt:data.generated_at});
+  const bytes=await workbook.xlsx.writeBuffer();
+  if(epoch!==dataEpoch||!accessGranted)throw Error('Your session changed. Please export again.');
+  await saveExportBlob(new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),`Expense-settlement-${from||'all'}-to-${to||'today'}.xlsx`,'Expense settlement');
+  $('#expenseExportDialog').close();notify('Excel export ready.','success');
+ } finally {button.disabled=false;button.textContent='Download Excel';}
 }
 
 function renderAll() { renderStudio(); renderLibrary(); renderCatalogueChoices(); renderQuotes(); renderContacts(); renderInventory(); renderExpenses(); renderOrders(); }
@@ -1046,3 +1088,13 @@ if (db) {
   db.auth.getSession().then(({ data, error }) => error ? notify(error.message) : updateAccess(data.session)).catch(error => notify(error.message));
   db.auth.onAuthStateChange((_event, session) => { setTimeout(() => updateAccess(session).catch(error => notify(error.message)), 0); });
 } else updateAccess(null);
+
+$('#exportExpenses').onclick=openExpenseExport;
+$('#closeExpenseExport').onclick=()=>$('#expenseExportDialog').close();
+$('#closeExpenseAdjustment').onclick=()=>$('#expenseAdjustmentDialog').close();
+$('#expenseAdjustmentForm').elements.extraAmount.oninput=updateExpenseAdjustmentTotal;
+$('#expenseAdjustmentForm').onsubmit=event=>{event.preventDefault();saveExpenseAdjustment(event.currentTarget).catch(error=>notify(error.message));};
+$('#expenseExportForm').elements.allHistory.onchange=event=>{const form=$('#expenseExportForm');form.elements.from.disabled=event.target.checked;form.elements.to.disabled=event.target.checked;};
+$('#expenseExportForm').onsubmit=event=>{event.preventDefault();exportExpenses(event.currentTarget).catch(error=>notify(error.message));};
+
+$('#expenseAdjustmentDialog').addEventListener('cancel',event=>{if(expenseAdjustmentBusy)event.preventDefault();});
