@@ -23,3 +23,13 @@ Deployment order matters: apply 202610110001_expense_adjustments.sql before the 
 ## Dependency review
 
 ExcelJS is pinned at 4.4.0 and used only for workbook generation, not opening untrusted workbooks. Its transitive uuid advisory concerns buffer-based v3/v5/v6 operations; this export path does not use those APIs. Compatible patches were applied to the existing Capacitor Android runtime, DOMPurify and xmldom dependencies. npm audit still reports existing development-tool findings (including the old tar dependency under @capacitor/assets), and uuid findings. This checkpoint does not claim a clean dependency audit; do not run a forced downgrade/upgrade as part of release without separate compatibility review.
+
+## Edit saved quotations
+
+- Implemented Orders → View details → Edit quotation for Enquiry, Quotation sent and Follow-up. Confirmed/fulfilment orders are protected.
+- Reuses the quote form, updates the same ID/code, preserves historical unit cost and price unless the margin/combo changes, and retains prior database rows in member-only quotation_revisions.
+- Atomic RPC rejects stale full-row snapshots and deduplicates retried saves. Status, original quote timestamp, expenses and ownership are retained.
+- Legacy card-addon quotes are blocked from editing because the current form cannot represent those fields safely. A removed combo must be restored first.
+- Already shared PDFs/messages are static: download and resend after saving changes. Revision history is stored for recovery; no history/restore UI is included.
+- 37 Node tests pass; local SQL covers update identity, audit snapshot, retry, stale edit, confirmed status and access denial. Production migration and device/browser acceptance remain before release.
+- Deploy 202610130001_quote_revisions.sql before the updated client. No production changes made for this feature.

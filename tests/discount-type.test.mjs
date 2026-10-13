@@ -16,7 +16,7 @@ test('discount type survives saved order mapping; legacy orders retain generic l
 test('optional type changes wording without changing discount calculations',()=>{
  const values={'#quoteQuantity':'35','#quoteMargin':'30','#quoteClientName':'Sample','#quoteClientMobile':'9999999999','#quoteDeliveryArea':'Local','#quoteSpecialRequest':'','#quoteComplimentary':'','#quoteEventDate':'','#quoteDeliveryDate':'','#quoteNetWrapping':'false','#quoteDiscountPercent':'5','#quoteDiscountType':'Family','#quoteTitle':'Sample quote'};
  const context=vm.createContext({$:id=>({value:values[id]}),selectedQuoteCombo:()=>({productIds:[]}),quoteAdditionalCostValues:()=>[],comboCost:()=>39,quoteDefaultTitle:()=>''});
- vm.runInContext(fn('quoteValues'),context);
+ vm.runInContext(fn('quotePricing')+'\n'+fn('quoteValues'),context);
  const family=context.quoteValues();values['#quoteDiscountType']='';const plain=context.quoteValues();
  assert.equal(family.discountType,'Family');assert.equal(family.total,1695.75);assert.equal(family.total,plain.total);assert.equal(family.discountAmount,89.25);
 });
