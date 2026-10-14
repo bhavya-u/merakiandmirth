@@ -357,3 +357,5 @@ dialog>.close:focus-visible,dialog form>.close:focus-visible{outline:3px solid #
 }
 
 @media print { .catalogue-sheet-grid.expanded-products-page .catalogue-product-strip img { object-fit:contain!important } }
+
+.online-product-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 7px;margin:4px 0;border-radius:12px;background:#e6f0eb;color:#185044;font:600 11px/1.3 Arial,sans-serif;vertical-align:middle}.online-product-badge svg{flex:none}
