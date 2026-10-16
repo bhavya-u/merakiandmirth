@@ -622,49 +622,22 @@ function catalogueGalleryLayout(count) {
   return { columns, tileSize, gap };
 }
 async function drawNativeCataloguePage(doc, pageCombos, heading, totalCombos, pageNumber, pageCount, logo) {
-  pdfFrame(doc);
-  if (logo) doc.addImage(logo, 'JPEG', 14, 14, 24, 24, undefined, 'FAST');
-  pdfText(doc, 'MERAKI & MIRTH', 43, 18, 115, { style: 'bold', size: 8, color: pdfPalette.gold });
-  pdfText(doc, heading, 43, 27, 116, { font: 'times', style: 'bold', size: 19, color: pdfPalette.ink, line: 1.05 });
-  const firstPage = pageNumber === 1;
-  const message = firstPage ? catalogueWelcome() : `A closer look at the thoughtful sets curated especially for you. Page ${pageNumber} of ${pageCount}.`;
-  const introEnd = pdfText(doc, message, 14, 46, 182, { font: 'times', style: 'italic', size: 9.5, color: pdfPalette.muted, line: 1.28 });
-  doc.setFillColor(248, 237, 222);
-  doc.roundedRect(163, 15, 33, 10, 5, 5, 'F');
-  pdfCenteredText(doc, firstPage ? `${totalCombos} CURATED ${totalCombos === 1 ? 'COMBO' : 'COMBOS'}` : `PAGE ${pageNumber} OF ${pageCount}`, 179.5, 20.2, { style: 'bold', size: 6.2, color: pdfPalette.gold });
-  const x = 14;
-  const width = 182;
-  const gap = 6;
-  const y = Math.max(firstPage ? 69 : 62, introEnd + 7);
-  const startIndex = pageCombos._offset || 0;
-  const expandedPage = true;
-  const cardHeight = 270 - y;
-  for (let index = 0; index < pageCombos.length; index += 1) {
-    const combo = pageCombos[index];
-    const items = comboProducts(combo);
-    const cardY = y + index * (cardHeight + gap);
-    doc.setFillColor(255, 255, 255);
-    doc.setDrawColor(...pdfPalette.line);
-    doc.roundedRect(x, cardY, width, cardHeight, 3, 3, 'FD');
-    // Match the browser export: the number sits deliberately half outside the
-    // card corner, instead of drifting inside the left whitespace.
-    doc.setFillColor(...pdfPalette.ink);
-    doc.setDrawColor(255, 249, 241);
-    doc.setLineWidth(.55);
-    doc.circle(x, cardY, 4.25, 'FD');
-    pdfCenteredText(doc, String(startIndex + index + 1), x, cardY + .1, { style: 'bold', size: 6.6, color: [255, 255, 255] });
-    const galleryHeight = await drawPdfProductGallery(doc, items, { centerX: x + width / 2, top: cardY + 9, ...catalogueGalleryLayout(items.length) });
-    let textY = cardY + 14 + galleryHeight;
-    textY = pdfText(doc, tagLabel(normalizeTag(combo.occasion)).toUpperCase(), x + 7, textY, width - 14, { style: 'bold', size: 6.4, color: pdfPalette.gold });
-    textY = pdfText(doc, combo.name, x + 7, textY + 2, width - 14, { font: 'times', style: 'bold', size: expandedPage ? 16 : 13.5, color: pdfPalette.ink, line: 1.05 });
-    textY = pdfText(doc, `${pdfMoney(liveComboRate(combo))} per curated set`, x + 7, textY + 3, width - 14, { style: 'bold', size: 8.2, color: pdfPalette.ink });
-    pdfText(doc, 'INCLUSIONS', x + 7, textY + 5, width - 14, { style: 'bold', size: 6.2, color: pdfPalette.gold });
-    const listTop = textY + 10, columns = expandedPage ? 3 : 2, rows = Math.ceil(items.length / columns), columnWidth = (width - 17) / columns;
-    for (let column = 0; column < columns; column += 1) {
-      let listY = listTop;
-      for (const item of items.slice(column * rows, (column + 1) * rows)) listY = pdfText(doc, `- ${item.name}`, x + 8 + column * columnWidth, listY, columnWidth - 4, { size: 8.5, color: pdfPalette.muted, line: 1.12 }) + .7;
-    }
-  }
+ const design=ProductCatalogue,combo=pageCombos[0],items=comboProducts(combo);
+ design.frame(doc,{title:'The Curated Edit',client:$('#catalogueClientName').value.trim(),page:pageNumber,pages:pageCount,logo});
+ design.text(doc,`${String(pageNumber).padStart(2,'0')}  /  ${tagLabel(normalizeTag(combo.occasion)).toUpperCase()}`,16,64,178,{size:8,style:'bold',color:design.palette.gold});
+ const titleEnd=design.text(doc,combo.name,16,76,178,{size:25,font:'times',maxLines:2});
+ const galleryTop=titleEnd+6,columns=items.length>6?3:2,rows=Math.ceil(items.length/columns),width=178/columns;
+ doc.setFont('helvetica','normal');doc.setFontSize(9);
+ const listHeight=Math.max(0,...Array.from({length:columns},(_,column)=>items.slice(column*rows,(column+1)*rows).reduce((height,item)=>height+doc.splitTextToSize(pdfSafeText(item.name),width-6).length*9*.3528*1.2+2,0)));
+ const detailTop=Math.min(galleryTop+114,271-26-listHeight);
+ const layout=catalogueGalleryLayout(items.length),galleryRows=Math.max(1,Math.ceil(items.length/layout.columns));
+ layout.tileSize=Math.min(layout.tileSize,(detailTop-galleryTop-6-(galleryRows-1)*layout.gap)/galleryRows);
+ if(layout.tileSize<20)throw Error('This combo has too much text for one page. Shorten its product names before exporting.');
+ await drawPdfProductGallery(doc,items,{centerX:105,top:galleryTop,...layout});
+ doc.setDrawColor(...design.palette.line);doc.line(16,detailTop,194,detailTop);
+ design.text(doc,`${pdfMoney(liveComboRate(combo))} per curated set`,16,detailTop+10,178,{size:15,font:'times'});
+ design.text(doc,'INCLUDED IN YOUR SET',16,detailTop+19,178,{size:7.5,style:'bold',color:design.palette.gold});
+ for(let column=0;column<columns;column++){let y=detailTop+26;for(const item of items.slice(column*rows,(column+1)*rows))y=design.text(doc,item.name,16+column*width,y,width-6,{size:9,maxLines:3,color:design.palette.muted})+2;}
 }
 async function exportCatalogueNative(chosen, heading, clientName = '', eventName = '') {
   const { jsPDF } = window.jspdf || {};
@@ -680,7 +653,7 @@ async function exportCatalogueNative(chosen, heading, clientName = '', eventName
     await drawNativeCataloguePage(doc, pages[index], heading, chosen.length, index + 1, pages.length, logo);
   }
   const filename = pdfExportFilename('Curated Catalogue', clientName, eventName || heading);
-  await shareNativePdf(doc, filename, filename.replace(/\.pdf$/i, ''));
+  if(isNativeApp())await shareNativePdf(doc,filename,filename.replace(/\.pdf$/i,''));else await saveExportBlob(doc.output('blob'),filename,'Curated catalogue');
 }
 function catalogueSheetPage(pageCombos, heading, totalCombos, pageIndex, pageCount, offset) {
   const firstPage = pageIndex === 0;
@@ -697,7 +670,7 @@ async function exportCatalogue() {
   const eventName = occasion === 'all_combos' ? 'All occasions' : tagLabel(normalizeTag(occasion));
   const heading = occasion === 'all_combos' ? 'Curated Catalogue' : (/combos?$/i.test(occasion) ? occasion : `${eventName} Combos`);
   const clientName = $('#catalogueClientName').value.trim();
-  if (isNativeApp()) {
+  {
     const button = $('#exportCatalogue');
     setExportPending(button, true, 'Preparing PDF…');
     try {
@@ -712,11 +685,6 @@ async function exportCatalogue() {
     }
     return;
   }
-  const pages = cataloguePages(chosen);
-  $('#printCatalogue').innerHTML = pages.map((pageCombos, pageIndex) => catalogueSheetPage(pageCombos, heading, chosen.length, pageIndex, pages.length, pages.slice(0, pageIndex).reduce((total, page) => total + page.length, 0))).join('');
-  // Temporarily paused while catalogue PDF testing is in progress.
-  // await queueTelegramNotification('catalogue_shared', catalogueTelegramMessage(chosen, heading));
-  printWithFilename(pdfExportFilename('Curated Catalogue', clientName, eventName));
 }
 
 function quotePricing(combo, margin) { const saved = typeof editingQuote !== 'undefined' && editingQuote; const sameCombo = saved && combo.id === saved.comboId; const cost = sameCombo ? saved.unitCost : comboCost(combo.productIds); return { cost, price: sameCombo && margin === saved.margin ? saved.price : Math.round(cost * (1 + margin / 100)) }; }
@@ -1158,7 +1126,7 @@ async function exportProductCatalogue() {
  try {
   if(!window.jspdf?.jsPDF)throw Error('PDF tools are still loading. Please retry.');
   pdfTileCache.clear();
-  const doc=await ProductCatalogue.pdf({jsPDF:window.jspdf.jsPDF,products:chosen,showPrices,client,image:async product=>{if(epoch!==dataEpoch||!accessGranted)throw Error('Session changed; export cancelled.');const tile=await pdfTileData(product);if(product.image&&!tile)throw Error('A product image could not load. Please retry.');return tile;}});
+  const doc=await ProductCatalogue.pdf({jsPDF:window.jspdf.jsPDF,products:chosen,showPrices,client,logo:await imageDataForPdf('assets/meraki-mirth-logo-original.png'),image:async product=>{if(epoch!==dataEpoch||!accessGranted)throw Error('Session changed; export cancelled.');const tile=await pdfTileData(product);if(product.image&&!tile)throw Error('A product image could not load. Please retry.');return tile;}});
   if(epoch!==dataEpoch||!accessGranted)return;
   const filename=pdfExportFilename('Gift Catalogue',client);
   if(isNativeApp())await shareNativePdf(doc,filename,'Gift catalogue');else await saveExportBlob(doc.output('blob'),filename,'Gift catalogue');
