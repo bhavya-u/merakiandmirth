@@ -8,7 +8,7 @@ const config = { url: settings.API_URL, anonKey: settings.ANON_KEY, environment:
 if (!config.anonKey) throw new Error('Local anon key missing.');
 const csp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' http://127.0.0.1:54321 data: blob:; connect-src 'self' http://127.0.0.1:54321 ws://127.0.0.1:54321; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json' };
-const allowed = new Set(['product-images.js', 'expense-export.js', 'app.js', 'styles.css', 'manifest.webmanifest', 'flow.css', 'overrides.css', 'review-fixes.css']);
+const allowed = new Set(['product-images.js', 'expense-export.js', 'product-catalogue.js', 'app.js', 'styles.css', 'manifest.webmanifest', 'flow.css', 'overrides.css', 'review-fixes.css']);
 const server = http.createServer(async (req, res) => {
   res.setHeader('Content-Security-Policy', csp);
   res.setHeader('Cache-Control', 'no-store');

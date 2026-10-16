@@ -1,0 +1,10 @@
+import test from 'node:test';import assert from 'node:assert/strict';import '../product-catalogue.js';import {jsPDF} from 'jspdf';
+const pc=globalThis.ProductCatalogue;
+function TestPDF(options){return new jsPDF({...options,compress:false});}
+const products=[{id:'a',name:'Gift',baseCost:100,buffer:8,catalogueRole:'main-gift',collectionTags:['german silver'],events:['birthday'],createdAt:'2026-10-15T18:30:00Z'},{id:'b',name:'Addon',baseCost:50,buffer:0,catalogueRole:'add-on',collectionTags:[],events:['all'],createdAt:'2026-10-15T18:29:00Z'}];
+const options={min:'',max:'',role:'',tag:'',occasion:'',from:'',to:''};
+test('45% adds to unrounded cost plus buffer',()=>{assert.equal(pc.price(products[0]),157);assert.equal(pc.price({baseCost:100,buffer:0}),145);assert.equal(pc.price({baseCost:10,buffer:.4}),15);});
+test('intersect budget, role, collection, occasion and India date bounds',()=>{assert.deepEqual(pc.filter(products,{...options,min:'157',max:'157',role:'main-gift',tag:'german silver',occasion:'birthday',from:'2026-10-16',to:'2026-10-16'}).map(p=>p.id),['a']);assert.equal(pc.filter(products,{...options,to:'2026-10-15'}).length,1);assert.equal(pc.filter(products,{...options,occasion:'wedding'})[0].id,'b');});
+test('tags normalized and deduplicated',()=>assert.deepEqual(pc.tags(' German Silver,wood, german silver, '),['german silver','wood']));
+test('price toggle removes prices, costs and supplier details from PDF',async()=>{for(const showPrices of [true,false]){const doc=await pc.pdf({jsPDF:TestPDF,products:[{...products[0],supplier:'PRIVATE VENDOR'}],showPrices,image:async()=>null});const content=doc.output();assert.equal(content.includes('INR 157'),showPrices);assert.ok(!content.includes('PRIVATE VENDOR'));assert.ok(!content.includes('buffer'));assert.equal(doc.getNumberOfPages(),1);}});
+test('two products per PDF page, including odd last page',async()=>{const doc=await pc.pdf({jsPDF:TestPDF,products:[...products,products[0]],showPrices:true,image:async()=>null});assert.equal(doc.getNumberOfPages(),2);});

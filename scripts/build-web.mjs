@@ -8,7 +8,7 @@ const files = [
   'index.html',
   'app.js',
   'product-images.js',
-  'expense-export.js',
+  'expense-export.js', 'product-catalogue.js',
   'styles.css',
   'supabase-config.js',
   'manifest.webmanifest'

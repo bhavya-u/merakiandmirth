@@ -33,3 +33,11 @@ ExcelJS is pinned at 4.4.0 and used only for workbook generation, not opening un
 - Already shared PDFs/messages are static: download and resend after saving changes. Revision history is stored for recovery; no history/restore UI is included.
 - 37 Node tests pass; local SQL covers update identity, audit snapshot, retry, stale edit, confirmed status and access denial. Production migration and device/browser acceptance remain before release.
 - Deploy 202610130001_quote_revisions.sql before the updated client. No production changes made for this feature.
+
+## Individual gift catalogue
+
+- Catalogue Studio now has an individual product catalogue: inclusive selling-price range, occasion, role, collection tag and India date-added filters; selection and select-all; optional client name; price visibility toggle defaults on.
+- Selling price is round((base cost + buffer) × 1.45), without intermediate rounding. Budget filters use the same price even when the PDF hides prices. Product role and comma-separated collection tags are editable in Product Library. Existing products remain unclassified.
+- Two large photos per A4 page; optimized export images, per-export deduplication, maximum 100 selected products. Supplier/cost/buffer metadata is excluded from client PDFs. No extra metadata queries on filter changes. Failed image loading aborts export rather than silently dropping a stored photo.
+- 42 Node tests pass, including filter intersections, India date boundaries, markup rounding, tag normalization, PDF pagination and price omission. Local migration and metadata update verified. Browser selection/export verified with a four-page, eight-product PDF and no prices. Price-on and price-off PDF layouts visually inspected.
+- Apply 202610160001_product_catalogue_tags.sql before deploying the updated client. Applied to local test database only; production and the production-backed port 4173 remain unchanged. Local preview: port 4174. Native Android share remains to be checked on a device as part of release acceptance.

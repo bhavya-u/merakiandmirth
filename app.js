@@ -81,6 +81,7 @@ let vendors = [];
 let contactsTab = 'clients';
 let clientSearch = '';
 let vendorSearch = '';
+const productCatalogueSelection = new Set();
 let quoteAdditionalCosts = [];
 let editingQuote = null, savingQuote = false;
 let ordersFrom = currentYearDateRange().from;
@@ -101,7 +102,7 @@ async function runDatabaseUpdate(message, work) { setDatabaseUpdateState(true, m
 function assertAccess() { if (!accessGranted) { notify('Sign in with an approved email and password first.'); return false; } return true; }
 function parseContents(value) { try { return JSON.parse(value || '{}'); } catch { return {}; } }
 function roundedProductPrice(cost, buffer) { return Math.round(Math.max(0, Number(cost || 0)) + Math.max(0, Number(buffer || 0))); }
-function productFromRow(row) { const baseCost = Number(row.cost || 0), buffer = Number(row.buffer || 0), rate = row.rounded_price == null ? roundedProductPrice(baseCost, buffer) : Number(row.rounded_price); return { id: row.id, sku: row.sku || row.id, name: row.name, baseCost, buffer, rate, events: (row.occasions?.length ? row.occasions : ['all']).map(normalizeTag), image: row.photo || '', stockOnHand: Number(row.stock_on_hand || 0), reorderLevel: Number(row.reorder_level || 0), supplier: row.supplier_name || '', leadTimeDays: Number(row.lead_time_days || 0), createdAt: row.created_at || '' }; }
+function productFromRow(row) { const baseCost = Number(row.cost || 0), buffer = Number(row.buffer || 0), rate = row.rounded_price == null ? roundedProductPrice(baseCost, buffer) : Number(row.rounded_price); return { id: row.id, sku: row.sku || row.id, name: row.name, baseCost, buffer, rate, events: (row.occasions?.length ? row.occasions : ['all']).map(normalizeTag), image: row.photo || '', stockOnHand: Number(row.stock_on_hand || 0), reorderLevel: Number(row.reorder_level || 0), supplier: row.supplier_name || '', catalogueRole: row.catalogue_role || '', collectionTags: row.collection_tags || [], leadTimeDays: Number(row.lead_time_days || 0), createdAt: row.created_at || '' }; }
 function comboFromRow(row) { const meta = parseContents(row.contents); return { id: row.id, occasion: row.occasions?.[0] || '', name: row.name, rate: Number(row.cost || 0), margin: Number(meta.margin ?? 30), productIds: row.component_ids || [] }; }
 function orderFromRow(row) { const primary = row.items?.[0] || {}; const comboId = row.combo_id || primary.comboId || ''; const combo = combos.find(item => item.id === comboId); const quantity = Number(row.qty || 0); const unitCost = Number(primary.unitCost ?? (combo ? comboCost(combo.productIds) : 0)); const costSnapshot = Number(row.cost_snapshot || unitCost * quantity); const expensesTotal = Number(row.expenses_total || 0); const profit = Number(row.total) - costSnapshot - expensesTotal; const profitRealised = profitStatuses.has(row.status); const additionalCosts = (row.additional_costs || primary.additionalCosts || []).map(item => ({ label: String(item.label || 'Additional cost'), amount: Math.max(0, Number(item.amount || 0)) })).filter(item => item.amount > 0); return { id: row.id, clientId: row.client_id || '', code: row.code, comboId, comboName: primary.comboName || combo?.name || row.title, title: row.title, occasion: row.event, quantity, total: Number(row.total), status: row.status, customerName: row.customer_name || '', customerPhone: row.customer_phone || '', deliveryArea: row.delivery_area || '', specialRequest: row.special_request || '', complimentary: row.complimentary || primary.complimentary || '', eventDate: row.event_date || primary.eventDate || '', deliveryDate: row.delivery_date || primary.deliveryDate || '', netWrapping: Boolean(row.net_wrapping ?? primary.netWrapping), netWrappingUnitPrice: Number(row.net_wrapping_unit_price ?? primary.netWrappingUnitPrice ?? 0), additionalCosts, thankYouCardCode: row.thank_you_card_code || primary.thankYouCardCode || '', thankYouCardStyle: row.thank_you_card_style || primary.thankYouCardStyle || 'none', thankYouCardUnitPrice: Number(row.thank_you_card_unit_price ?? primary.thankYouCardUnitPrice ?? 0), thankYouCardDesignFee: Number(row.thank_you_card_design_fee ?? primary.thankYouCardDesignFee ?? 0), discountType: String(primary.discountType || '').trim().slice(0, 60), discountPercent: Number(row.discount_percent ?? primary.discountPercent ?? 0), discountAmount: Number(row.discount_amount ?? primary.discountAmount ?? 0), subtotalBeforeDiscount: Number(row.subtotal_before_discount ?? primary.subtotalBeforeDiscount ?? row.total ?? 0), quoteSentAt: row.quote_sent_at || '', createdAt: row.created_at, created: new Date(row.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }), costSnapshot, expensesTotal, profit, profitRealised }; }
 function productMatchesEvent(product, event) { const tag = normalizeTag(event); return tag === 'all_products' || product.events.includes('all') || product.events.includes(tag); }
@@ -250,7 +251,7 @@ async function fetchAllMetadata(makeQuery, key = 'id') {
 }
 function dataQueries() {
   return {
-    items: async () => { const result = await fetchAllMetadata(() => db.from('library_items').select('id,kind,name,cost,buffer,rounded_price,contents,component_ids,occasions,photo,sku,stock_on_hand,reorder_level,supplier_name,lead_time_days,created_at')); result.data?.sort((a,b) => a.name.localeCompare(b.name)); return result; },
+    items: async () => { const result = await fetchAllMetadata(() => db.from('library_items').select('id,kind,name,cost,buffer,rounded_price,contents,component_ids,occasions,photo,sku,stock_on_hand,reorder_level,supplier_name,lead_time_days,created_at,catalogue_role,collection_tags')); result.data?.sort((a,b) => a.name.localeCompare(b.name)); return result; },
     orders: async () => { const from = ordersFrom, to = ordersTo; const [page, summary] = await Promise.all([orderPageQuery(), db.rpc('workspace_order_summary', { p_from: from || null, p_to: to || null })]); return { error: page.error || summary.error, data: { rows: (page.data || []).slice(0,50), more: (page.data || []).length > 50, summary: summary.data, from, to } }; },
     occasions: () => db.from('occasion_types').select('code,label,sort_order').eq('active', true).order('sort_order'),
     expenses: async () => { const [page, summary] = await Promise.all([expensePageQuery(), db.rpc('workspace_expense_summary')]); return { error: page.error || summary.error, data: { rows: (page.data || []).slice(0, 50), more: (page.data || []).length > 50, summary: summary.data } }; },
@@ -264,6 +265,7 @@ function dataQueries() {
 async function updateAccess(session) {
   dataEpoch++;
   resetQuoteEdit();
+  productCatalogueSelection.clear();
   datasetReadTimes.clear();
   workspaceReadControllers.forEach(controller => controller.abort());
   navigationRequest++;
@@ -409,7 +411,7 @@ async function renameOccasion(code, label) { if (!label) throw new Error('Enter 
 async function removeOccasion(code, replacementCode) { const { error } = await db.rpc('remove_workspace_occasion', { p_code: code, p_replacement_code: replacementCode }); if (error) throw error; await hydrateFromSupabase(['occasions', 'items', 'orders']); renderOccasionManager(); notify('Occasion removed and existing tags reassigned.', 'success'); }
 function syncProductRoundedPrice() { const form = $('#productForm'); if (!form) return; $('#productRoundedPrice').value = money(roundedProductPrice(form.elements.rate.value, form.elements.buffer.value)); }
 function syncProductBufferDefault() { const form = $('#productForm'); if (!form) return; if (form.dataset.bufferManuallyEdited !== 'true') { const cost = Math.max(0, Number(form.elements.rate.value || 0)); form.elements.buffer.value = cost ? (Math.round(cost * 8) / 100).toFixed(2) : ''; } syncProductRoundedPrice(); }
-function openProductDialog(product) { if (!assertAccess()) return; editingProduct = product?.id || null; const form = $('#productForm'); form.reset(); form.dataset.draftProductId = product?.id || `product-${uuid()}`; form.dataset.bufferManuallyEdited = product ? 'true' : 'false'; $('#eventTagChoices').innerHTML = tableOccasions().map(tag => `<label><input type="checkbox" name="events" value="${tag}"${(product?.events || []).includes(tag) ? ' checked' : ''}>${tagLabel(tag)}</label>`).join(''); $('#dialogLabel').textContent = product ? 'EDIT PRODUCT' : 'NEW PRODUCT'; $('#dialogTitle').textContent = product ? 'Edit product' : 'Add a product'; if (product) { form.elements.name.value = product.name; form.elements.rate.value = product.baseCost || ''; form.elements.buffer.value = product.buffer || 0; form.elements.supplier.value = product.supplier || ''; form.elements.reorderLevel.value = product.reorderLevel || 0; form.elements.leadTimeDays.value = product.leadTimeDays || 0; } syncProductRoundedPrice(); $('#productDialog').showModal(); }
+function openProductDialog(product) { if (!assertAccess()) return; editingProduct = product?.id || null; const form = $('#productForm'); form.reset(); form.dataset.draftProductId = product?.id || `product-${uuid()}`; form.dataset.bufferManuallyEdited = product ? 'true' : 'false'; $('#eventTagChoices').innerHTML = tableOccasions().map(tag => `<label><input type="checkbox" name="events" value="${tag}"${(product?.events || []).includes(tag) ? ' checked' : ''}>${tagLabel(tag)}</label>`).join(''); $('#dialogLabel').textContent = product ? 'EDIT PRODUCT' : 'NEW PRODUCT'; $('#dialogTitle').textContent = product ? 'Edit product' : 'Add a product'; if (product) { form.elements.name.value = product.name; form.elements.rate.value = product.baseCost || ''; form.elements.buffer.value = product.buffer || 0; form.elements.supplier.value = product.supplier || ''; form.elements.catalogueRole.value = product.catalogueRole || ''; form.elements.collectionTags.value = (product.collectionTags || []).join(', '); form.elements.reorderLevel.value = product.reorderLevel || 0; form.elements.leadTimeDays.value = product.leadTimeDays || 0; } syncProductRoundedPrice(); $('#productDialog').showModal(); }
 const preparedUploads = new WeakMap();
 async function uploadImage(file) {
   let draft = preparedUploads.get(file);
@@ -444,7 +446,7 @@ async function saveProduct(form) {
       if (imageFile) image = await uploadImage(imageFile);
       const productCost = Math.max(0, Number(form.elements.rate.value || 0));
       const buffer = Math.max(0, Number(form.elements.buffer.value || 0));
-      const payload = { id, owner_id: user.id, kind: 'product', name: form.elements.name.value.trim(), cost: productCost, buffer, occasions: events, photo: image, contents: '', component_ids: [], sku: existing?.sku || id, supplier_name: form.elements.supplier.value.trim(), reorder_level: Math.max(0, Number(form.elements.reorderLevel.value || 0)), lead_time_days: Math.max(0, Number(form.elements.leadTimeDays.value || 0)) };
+      const payload = { id, owner_id: user.id, kind: 'product', name: form.elements.name.value.trim(), cost: productCost, buffer, occasions: events, photo: image, contents: '', component_ids: [], sku: existing?.sku || id, supplier_name: form.elements.supplier.value.trim(), catalogue_role: form.elements.catalogueRole.value, collection_tags: ProductCatalogue.tags(form.elements.collectionTags.value), reorder_level: Math.max(0, Number(form.elements.reorderLevel.value || 0)), lead_time_days: Math.max(0, Number(form.elements.leadTimeDays.value || 0)) };
       const { error } = await db.from('library_items').upsert(payload);
       if (error) throw error;
       if (payload.supplier_name) {
@@ -1096,7 +1098,7 @@ async function exportExpenses(form) {
  } finally {button.disabled=false;button.textContent='Download Excel';}
 }
 
-function renderAll() { renderStudio(); renderLibrary(); renderCatalogueChoices(); renderQuotes(); renderContacts(); renderInventory(); renderExpenses(); renderOrders(); }
+function renderAll() { renderProductCatalogue(); renderStudio(); renderLibrary(); renderCatalogueChoices(); renderQuotes(); renderContacts(); renderInventory(); renderExpenses(); renderOrders(); }
 
 document.querySelectorAll('.nav').forEach(button => button.onclick = () => navigate(button.dataset.view)); document.querySelectorAll('[data-studio-tab]').forEach(button => button.onclick = () => setStudioTab(button.dataset.studioTab));
 if (isNativeApp()) { $('#exportCatalogue').textContent = 'Save / share catalogue PDF'; $('#exportQuote').textContent = 'Save / share quote PDF'; }
@@ -1129,3 +1131,40 @@ $('#expenseExportForm').onsubmit=event=>{event.preventDefault();exportExpenses(e
 $('#expenseAdjustmentDialog').addEventListener('cancel',event=>{if(expenseAdjustmentBusy)event.preventDefault();});
 
 $('#cancelQuoteEdit').onclick = () => { if (!savingQuote) { resetQuoteEdit(); renderQuotePreview(); } };
+
+// Individual gift catalogues use existing metadata and optimized export images.
+function productCatalogueOptions() { return { min:$('#pcMin').value,max:$('#pcMax').value,occasion:$('#pcOccasion').value,role:$('#pcRole').value,tag:$('#pcTag').value,from:$('#pcFrom').value,to:$('#pcTo').value }; }
+function renderProductCatalogue() {
+ const optionList = (id,values,label) => { const select=$(id),prior=select.value; select.innerHTML='<option value="">'+label+'</option>'+values.map(value=>`<option value="${escapeHtml(value)}">${escapeHtml(id==='#pcOccasion'?tagLabel(value):value)}</option>`).join(''); if(values.includes(prior))select.value=prior; };
+ optionList('#pcOccasion',[...new Set(products.flatMap(p=>p.events).filter(tag=>tag!=='all'))].sort(),'All occasions');
+ optionList('#pcTag',[...new Set(products.flatMap(p=>p.collectionTags || []))].sort(),'All collections');
+ const options=productCatalogueOptions();
+ const invalid=(options.min!==''&&Number(options.min)<0)||(options.max!==''&&Number(options.max)<0)||(options.min!==''&&options.max!==''&&Number(options.min)>Number(options.max))||(options.from&&options.to&&options.from>options.to);
+ const visible=invalid?[]:ProductCatalogue.filter(products,options), ids=new Set(visible.map(p=>p.id));
+ for(const id of productCatalogueSelection)if(!ids.has(id))productCatalogueSelection.delete(id);
+ $('#pcError').textContent=invalid?'Check the price and date ranges: minimum/start must not exceed maximum/end.':visible.length?'':'No products match these filters.';
+ $('#pcProducts').innerHTML=visible.map(product=>`<label class="product-card pc-choice"><input type="checkbox" data-pc-id="${escapeHtml(product.id)}" ${productCatalogueSelection.has(product.id)?'checked':''}>${imageMarkup(product,'product-photo')}<h3>${escapeHtml(product.name)}</h3><span>${money(ProductCatalogue.price(product))} per item</span></label>`).join('');
+ $('#pcProducts').querySelectorAll('[data-pc-id]').forEach(input=>input.onchange=()=>{if(input.checked)productCatalogueSelection.add(input.dataset.pcId);else productCatalogueSelection.delete(input.dataset.pcId);updateProductCatalogueCount(visible.length);});
+ updateProductCatalogueCount(visible.length);
+}
+function updateProductCatalogueCount(matches) { $('#pcCount').textContent=`${productCatalogueSelection.size} selected · ${matches} matches`; $('#pcExport').disabled=!productCatalogueSelection.size; }
+async function exportProductCatalogue() {
+ if(!assertAccess())return;
+ const chosen=ProductCatalogue.filter(products,productCatalogueOptions()).filter(p=>productCatalogueSelection.has(p.id)).map(p=>({...p}));
+ if(!chosen.length)return notify('Select at least one product.');
+ if(chosen.length>100)return notify('Choose up to 100 products per catalogue to keep the PDF manageable.');
+ const button=$('#pcExport'),epoch=dataEpoch,showPrices=$('#pcPrices').checked,client=$('#pcClient').value.trim();
+ setExportPending(button,true,'Preparing PDF…');
+ try {
+  if(!window.jspdf?.jsPDF)throw Error('PDF tools are still loading. Please retry.');
+  pdfTileCache.clear();
+  const doc=await ProductCatalogue.pdf({jsPDF:window.jspdf.jsPDF,products:chosen,showPrices,client,image:async product=>{if(epoch!==dataEpoch||!accessGranted)throw Error('Session changed; export cancelled.');const tile=await pdfTileData(product);if(product.image&&!tile)throw Error('A product image could not load. Please retry.');return tile;}});
+  if(epoch!==dataEpoch||!accessGranted)return;
+  const filename=pdfExportFilename('Gift Catalogue',client);
+  if(isNativeApp())await shareNativePdf(doc,filename,'Gift catalogue');else await saveExportBlob(doc.output('blob'),filename,'Gift catalogue');
+ } catch(error){notify(error.message);}finally{pdfTileCache.clear();setExportPending(button,false);}
+}
+['pcMin','pcMax','pcOccasion','pcRole','pcTag','pcFrom','pcTo'].forEach(id=>{ $('#'+id).addEventListener('change',renderProductCatalogue); if(['pcMin','pcMax'].includes(id))$('#'+id).addEventListener('input',renderProductCatalogue); });
+$('#pcSelectAll').onclick=()=>{ProductCatalogue.filter(products,productCatalogueOptions()).forEach(p=>productCatalogueSelection.add(p.id));renderProductCatalogue();};
+$('#pcClear').onclick=()=>{productCatalogueSelection.clear();renderProductCatalogue();};
+$('#pcExport').onclick=exportProductCatalogue;

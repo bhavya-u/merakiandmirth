@@ -359,3 +359,5 @@ dialog>.close:focus-visible,dialog form>.close:focus-visible{outline:3px solid #
 @media print { .catalogue-sheet-grid.expanded-products-page .catalogue-product-strip img { object-fit:contain!important } }
 
 .online-product-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 7px;margin:4px 0;border-radius:12px;background:#e6f0eb;color:#185044;font:600 11px/1.3 Arial,sans-serif;vertical-align:middle}.online-product-badge svg{flex:none}
+
+.product-catalogue-panel{margin:24px 0;padding:20px;border:1px solid var(--line);border-radius:9px;background:#fff}.product-catalogue-panel>summary{font-size:22px;font-weight:700;cursor:pointer}.product-catalogue-panel>p{font-size:13px;color:#756c62}.product-catalogue-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}.pc-toggle{display:flex;align-items:center;gap:8px}.pc-toggle input,.pc-choice>input{width:auto}.pc-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:18px 0}.pc-choice{cursor:pointer}.pc-choice:has(input:checked){outline:2px solid var(--ink)}.pc-choice>input{margin-bottom:8px}.pc-choice span{font-size:13px}
