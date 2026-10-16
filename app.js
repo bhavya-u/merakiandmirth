@@ -1100,7 +1100,20 @@ $('#expenseAdjustmentDialog').addEventListener('cancel',event=>{if(expenseAdjust
 
 $('#cancelQuoteEdit').onclick = () => { if (!savingQuote) { resetQuoteEdit(); renderQuotePreview(); } };
 
-// Individual gift catalogues use existing metadata and optimized export images.
+// Individual gift catalogues
+function setCatalogueTab(kind,focus=false) {
+ const productsActive=kind==='products';
+ for(const [name,active] of [['Combos',!productsActive],['Products',productsActive]]) {
+  const tab=$('#catalogue'+name+'Tab');tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1;
+  $('#catalogue'+name+'Panel').hidden=!active;
+  if(active&&focus)tab.focus();
+ }
+}
+for(const [id,kind] of [['catalogueCombosTab','combos'],['catalogueProductsTab','products']]) {
+ const tab=$('#'+id);tab.onclick=()=>setCatalogueTab(kind);
+ tab.onkeydown=event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();setCatalogueTab(event.key==='Home'?'combos':event.key==='End'?'products':kind==='combos'?'products':'combos',true);};
+}
+// Use existing metadata and optimized export images.
 function productCatalogueOptions() { return { min:$('#pcMin').value,max:$('#pcMax').value,occasion:$('#pcOccasion').value,role:$('#pcRole').value,tag:$('#pcTag').value,from:$('#pcFrom').value,to:$('#pcTo').value }; }
 function renderProductCatalogue() {
  const optionList = (id,values,label) => { const select=$(id),prior=select.value; select.innerHTML='<option value="">'+label+'</option>'+values.map(value=>`<option value="${escapeHtml(value)}">${escapeHtml(id==='#pcOccasion'?tagLabel(value):value)}</option>`).join(''); if(values.includes(prior))select.value=prior; };

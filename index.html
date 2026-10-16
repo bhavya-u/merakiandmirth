@@ -11,7 +11,7 @@
   <link rel="icon" href="assets/brand-logo.png">
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;1,500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=59">
+  <link rel="stylesheet" href="styles.css?v=catalogue-tabs-1">
 </head>
 <body class="auth-pending">
   <section id="authGate" class="auth-gate" aria-live="polite">
@@ -85,21 +85,29 @@
     </section>
 
     <section class="view" id="catalogues">
-      <div class="page-heading"><div><p class="section-label">CLIENT-READY EXPORTS</p><h2>Catalogue Studio</h2><p>Build an individual gift catalogue or share up to six curated combos.</p></div></div>
+      <div class="page-heading"><div><p class="section-label">CLIENT-READY EXPORTS</p><h2>Catalogue Studio</h2><p>Select your saved combos or create a catalogue of individual gifts.</p></div></div>
+      <div class="catalogue-tabs" role="tablist" aria-label="Catalogue type">
+        <button id="catalogueCombosTab" type="button" role="tab" aria-selected="true" aria-controls="catalogueCombosPanel" tabindex="0">Combos</button>
+        <button id="catalogueProductsTab" type="button" role="tab" aria-selected="false" aria-controls="catalogueProductsPanel" tabindex="-1">Individual gifts</button>
+      </div>
+      <div id="catalogueCombosPanel" role="tabpanel" aria-labelledby="catalogueCombosTab">
       <div class="catalogue-controls"><label>Filter catalogues<select id="catalogueOccasion" aria-label="Filter catalogues by occasion"></select></label><label>Client name <input id="catalogueClientName" maxlength="80" placeholder="Optional, e.g. Ashwini"></label><button id="exportCatalogue" class="export-btn">Download catalogue PDF <span>↓</span></button></div>
-      <details class="product-catalogue-panel" open><summary>Individual gift catalogue</summary>
-<p>Choose gifts by budget, occasion, role or collection. Prices include 45% added to cost plus buffer.</p>
+<div id="catalogueComboList" class="catalogue-combo-list"></div><p id="catalogueEmpty" class="library-empty">Choose an occasion to see its saved combos.</p>
+      </div>
+      <div id="catalogueProductsPanel" role="tabpanel" aria-labelledby="catalogueProductsTab" hidden>
+<div class="product-catalogue-panel">
+<div class="pc-intro"><h3>Find the right gifts</h3><p>Filter by your client’s budget, then select the pieces to include.</p></div>
 <div class="product-catalogue-filters">
 <label>Minimum price (₹)<input id="pcMin" type="number" min="0" step="1" placeholder="Any"></label><label>Maximum price (₹)<input id="pcMax" type="number" min="0" step="1" placeholder="Any"></label>
 <label>Occasion<select id="pcOccasion"></select></label><label>Product role<select id="pcRole"><option value="">All roles</option><option value="main-gift">Main gift</option><option value="add-on">Add-on</option><option value="packaging">Packaging</option></select></label>
-<label>Collection<select id="pcTag"></select></label><label>Added from<input id="pcFrom" type="date"></label><label>Added through<input id="pcTo" type="date"></label>
+<label>Collection<select id="pcTag"></select></label></div><details class="pc-more-filters"><summary>More filters</summary><div class="pc-date-filters"><label>Added from<input id="pcFrom" type="date"></label><label>Added through<input id="pcTo" type="date"></label></div></details><div class="pc-export-settings">
 <label>Client name<input id="pcClient" maxlength="80" placeholder="Optional"></label>
 <label class="pc-toggle"><input id="pcPrices" type="checkbox" checked> Show prices in PDF</label></div>
-<p>Use Edit product in the Product Library to assign roles and collection tags. Changing filters clears hidden selections.</p>
-<div class="pc-actions"><button id="pcSelectAll" class="soft-btn">Select all matches</button><button id="pcClear" class="soft-btn">Clear selection</button><span id="pcCount" aria-live="polite"></span><button id="pcExport" class="primary-btn">Download product catalogue PDF</button></div>
+<p>Prices include 45% added to cost plus buffer. Assign roles and collection tags in Product Library → Edit.</p>
+<div class="pc-actions"><div class="pc-selection-actions"><button id="pcSelectAll" class="soft-btn">Select all matches</button><button id="pcClear" class="soft-btn">Clear selection</button><span id="pcCount" aria-live="polite"></span></div><button id="pcExport" class="primary-btn">Download product catalogue PDF</button></div>
 <p id="pcError" role="status"></p><div id="pcProducts" class="library-grid"></div>
-</details>
-<div id="catalogueComboList" class="catalogue-combo-list"></div><p id="catalogueEmpty" class="library-empty">Choose an occasion to see its saved combos.</p>
+</div>
+      </div>
     </section>
     <section class="view" id="quotes">
       <div class="page-heading"><div><p class="section-label">CLIENT COMMUNICATION</p><h2>Quote sharing</h2><p>Shape a warm, client-ready quote, then save it as a quotation for the team to track.</p></div></div>
@@ -187,6 +195,6 @@
   <script src="product-images.js?v=1"></script>
   <script src="expense-export.js"></script>
   <script src="product-catalogue.js?v=1"></script>
-  <script src="app.js?v=55"></script>
+  <script src="app.js?v=catalogue-tabs-1"></script>
 </body>
 </html>
