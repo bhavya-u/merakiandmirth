@@ -1,14 +1,17 @@
 /* Product catalogue rules shared by screen filters and PDF generation. */
 (function (root) {
  const roles = ['main-gift', 'add-on', 'packaging'];
- const tags = value => [...new Set(String(value || '').split(',').map(tag => tag.trim().toLowerCase()).filter(Boolean))].slice(0,20);
+ const normalize = value => String(value || '').normalize('NFKC').trim().toLowerCase().replace(/\s+/g,' ').replace(/\badd[ -]?ons?\b/g,'add-on').replace(/\bmain[ -]gifts?\b/g,'main gift').replace(/\bbags\b/g,'bag');
+ const tags = value => {const values=[...new Set(String(value || '').split(',').map(normalize).filter(Boolean))];if(values.length>20 || values.some(tag=>tag.length>40))throw Error('Use up to 20 tags, each no longer than 40 characters.');return values;};
+ const productTags = product => [...new Set([...(product.collectionTags || []).map(normalize),...(product.catalogueRole ? [normalize(product.catalogueRole)] : [])])];
+ const matches = (product,query) => {const haystack=normalize([product.name,...productTags(product)].join(' '));return normalize(query).split(' ').filter(Boolean).every(word=>haystack.includes(word));};
  const price = product => Math.round((Number(product.baseCost || 0) + Number(product.buffer || 0)) * 145 / 100);
  const date = value => value ? new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(value)) : '';
  function filter(products, options) {
   return products.filter(product => {
    const amount = price(product), added = date(product.createdAt);
    return (options.min === '' || amount >= Number(options.min)) && (options.max === '' || amount <= Number(options.max)) &&
-    (!options.role || product.catalogueRole === options.role) && (!options.tag || (product.collectionTags || []).includes(options.tag)) &&
+    (!options.role || productTags(product).includes(normalize(options.role))) && (!options.tag || productTags(product).includes(normalize(options.tag))) && (!options.search || matches(product,options.search)) &&
     (!options.occasion || (product.events || []).includes(options.occasion) || (product.events || []).includes('all')) &&
     (!options.from || (added && added >= options.from)) && (!options.to || (added && added <= options.to));
   }).sort((a,b)=>price(a)-price(b) || a.name.localeCompare(b.name));
@@ -49,5 +52,5 @@
   }
   return doc;
  }
- root.ProductCatalogue={roles,tags,price,date,filter,pdf,frame,text,reference,palette};
+ root.ProductCatalogue={roles,tags,productTags,matches,normalize,price,date,filter,pdf,frame,text,reference,palette};
 })(globalThis);

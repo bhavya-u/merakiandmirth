@@ -348,7 +348,7 @@ function renderPicker() {
   const minimum = Number(studioBudgetMin || 0);
   const maximum = studioBudgetMax === '' ? Number.POSITIVE_INFINITY : Math.max(0, Number(studioBudgetMax));
   const visible = available
-    .filter(product => (!query || product.name.toLowerCase().includes(query)) && product.rate >= minimum && product.rate <= maximum)
+    .filter(product => (!query || ProductCatalogue.matches(product,query)) && product.rate >= minimum && product.rate <= maximum)
     .sort((left, right) => {
       const byName = left.name.localeCompare(right.name, undefined, { sensitivity: 'base' });
       const byPrice = Number(left.rate) - Number(right.rate);
@@ -396,7 +396,7 @@ function productStockStatus(product) { if (product.stockOnHand <= 0) return 'Out
 function openProductDetail(product) { if (!product) return notify('This product is no longer available.'); const stockStatus = productStockStatus(product); const units = count => `${count} unit${Number(count) === 1 ? '' : 's'}`; $('#productDetail').innerHTML = `<div class="product-detail-layout"><div class="product-detail-image">${imageMarkup(product, 'product-detail-photo')}</div><div class="product-detail-copy"><p class="section-label">PRODUCT DETAIL</p><h2>${escapeHtml(product.name)}</h2>${onlineProductBadge(product)}<p class="product-detail-sku">PRODUCT ID · ${escapeHtml(product.sku)}</p><div class="product-detail-price"><span>Final product price</span><strong>${money(product.rate)}</strong></div></div></div><div class="product-detail-grid"><div><span>Product cost</span><b>${money(product.baseCost)}</b></div><div><span>Buffer</span><b>${money(product.buffer)}</b></div><div><span>In inventory</span><b>${units(product.stockOnHand)}</b></div><div><span>Stock status</span><b class="product-stock-${stockStatus === 'In stock' ? 'good' : stockStatus === 'Low stock' ? 'low' : 'out'}">${stockStatus}</b></div><div><span>Reorder at</span><b>${units(product.reorderLevel)}</b></div><div><span>Supplier lead time</span><b>${product.leadTimeDays ? `${product.leadTimeDays} day${product.leadTimeDays === 1 ? '' : 's'}` : 'Not set'}</b></div></div><section class="product-detail-section"><span>Vendor</span><b>${escapeHtml(product.supplier || 'Not set')}</b></section><section class="product-detail-section"><span>Suitable occasions</span><p>${escapeHtml(product.events.map(tagLabel).join(' · '))}</p></section><p class="product-detail-added">${product.createdAt ? `Added ${escapeHtml(formattedDate(String(product.createdAt).slice(0, 10)))}` : 'Added date not available for this product.'}</p>`; $('#productDetailDialog').showModal(); }
 function addOrderComboLink(order) { if (!order.comboId || !combos.some(combo => combo.id === order.comboId)) return; const section = $('#orderDetail .order-detail-section'); const name = section?.querySelector('b'); if (!name) return; const button = document.createElement('button'); button.type = 'button'; button.className = 'combo-detail-link'; button.textContent = order.comboName; const hint = document.createElement('span'); hint.textContent = 'View combo →'; button.append(hint); button.onclick = () => { $('#orderDetailDialog').close(); openComboDetail(order.comboId); }; name.replaceWith(button); }
 
-function renderLibrary() { syncOccasionLists(); $('#librarySearch').value = librarySearch; $('#librarySort').value = librarySort; const query = librarySearch.trim().toLowerCase(); const visible = products.filter(product => (libraryEvent === 'all_products' || productMatchesEvent(product, libraryEvent)) && (!query || product.name.toLowerCase().includes(query))); const createdAt = product => new Date(product.createdAt || 0).getTime() || 0; visible.sort((first, second) => { if (librarySort === 'rate-asc') return first.rate - second.rate || first.name.localeCompare(second.name); if (librarySort === 'rate-desc') return second.rate - first.rate || first.name.localeCompare(second.name); if (librarySort === 'added-desc') return createdAt(second) - createdAt(first) || first.name.localeCompare(second.name); if (librarySort === 'added-asc') return createdAt(first) - createdAt(second) || first.name.localeCompare(second.name); return first.name.localeCompare(second.name); }); $('#libraryGrid').innerHTML = visible.map(product => `<article class="product-card"><button type="button" class="product-card-body" data-product-view="${product.id}" aria-label="View ${escapeHtml(product.name)} product details">${imageMarkup(product, 'product-photo')}<div><p>${escapeHtml(product.events.map(tagLabel).join(' · '))}</p><h3>${escapeHtml(product.name)}</h3>${onlineProductBadge(product)}<b>${product.rate ? money(product.rate) : 'Rate not set'}</b></div></button><div class="card-actions"><button data-product-view="${product.id}">View</button><button data-product-edit="${product.id}">Edit</button><button data-product-delete="${product.id}">Delete</button></div></article>`).join(''); $('#libraryEmpty').hidden = visible.length > 0; $('#libraryEmpty').textContent = products.length ? (query ? `No products match “${librarySearch.trim()}”.` : `No products are tagged for ${tagLabel(libraryEvent)}.`) : 'Your product library is empty. Add the first product to begin.'; document.querySelectorAll('[data-product-view]').forEach(button => button.onclick = () => openProductDetail(products.find(product => product.id === button.dataset.productView))); document.querySelectorAll('[data-product-edit]').forEach(button => button.onclick = () => openProductDialog(products.find(product => product.id === button.dataset.productEdit))); document.querySelectorAll('[data-product-delete]').forEach(button => button.onclick = () => deleteProduct(button.dataset.productDelete)); }
+function renderLibrary() { syncOccasionLists(); $('#librarySearch').value = librarySearch; $('#librarySort').value = librarySort; const query = librarySearch.trim().toLowerCase(); const visible = products.filter(product => (libraryEvent === 'all_products' || productMatchesEvent(product, libraryEvent)) && (!query || ProductCatalogue.matches(product,query))); const createdAt = product => new Date(product.createdAt || 0).getTime() || 0; visible.sort((first, second) => { if (librarySort === 'rate-asc') return first.rate - second.rate || first.name.localeCompare(second.name); if (librarySort === 'rate-desc') return second.rate - first.rate || first.name.localeCompare(second.name); if (librarySort === 'added-desc') return createdAt(second) - createdAt(first) || first.name.localeCompare(second.name); if (librarySort === 'added-asc') return createdAt(first) - createdAt(second) || first.name.localeCompare(second.name); return first.name.localeCompare(second.name); }); $('#libraryGrid').innerHTML = visible.map(product => `<article class="product-card"><button type="button" class="product-card-body" data-product-view="${product.id}" aria-label="View ${escapeHtml(product.name)} product details">${imageMarkup(product, 'product-photo')}<div><p>${escapeHtml(product.events.map(tagLabel).join(' · '))}</p><h3>${escapeHtml(product.name)}</h3>${onlineProductBadge(product)}<b>${product.rate ? money(product.rate) : 'Rate not set'}</b></div></button><div class="card-actions"><button data-product-view="${product.id}">View</button><button data-product-edit="${product.id}">Edit</button><button data-product-delete="${product.id}">Delete</button></div></article>`).join(''); $('#libraryEmpty').hidden = visible.length > 0; $('#libraryEmpty').textContent = products.length ? (query ? `No products match “${librarySearch.trim()}”.` : `No products are tagged for ${tagLabel(libraryEvent)}.`) : 'Your product library is empty. Add the first product to begin.'; document.querySelectorAll('[data-product-view]').forEach(button => button.onclick = () => openProductDetail(products.find(product => product.id === button.dataset.productView))); document.querySelectorAll('[data-product-edit]').forEach(button => button.onclick = () => openProductDialog(products.find(product => product.id === button.dataset.productEdit))); document.querySelectorAll('[data-product-delete]').forEach(button => button.onclick = () => deleteProduct(button.dataset.productDelete)); }
 function openOccasionDialog() { if (!assertAccess()) return; renderOccasionManager(); $('#occasionDialog').showModal(); }
 function renderOccasionManager() {
   const manager = $('#occasionManager');
@@ -431,6 +431,7 @@ async function uploadImage(file) {
 }
 async function saveProduct(form) {
   if (!assertAccess() || productSaveInFlight) return;
+  const productTags = ProductCatalogue.tags(form.elements.collectionTags.value);
   const existing = products.find(product => product.id === editingProduct);
   const events = [...form.querySelectorAll('[name="events"]:checked')].map(input => input.value);
   if (!events.length) throw new Error('Select at least one suitable occasion before saving the product.');
@@ -446,7 +447,7 @@ async function saveProduct(form) {
       if (imageFile) image = await uploadImage(imageFile);
       const productCost = Math.max(0, Number(form.elements.rate.value || 0));
       const buffer = Math.max(0, Number(form.elements.buffer.value || 0));
-      const payload = { id, owner_id: user.id, kind: 'product', name: form.elements.name.value.trim(), cost: productCost, buffer, occasions: events, photo: image, contents: '', component_ids: [], sku: existing?.sku || id, supplier_name: form.elements.supplier.value.trim(), catalogue_role: form.elements.catalogueRole.value, collection_tags: ProductCatalogue.tags(form.elements.collectionTags.value), reorder_level: Math.max(0, Number(form.elements.reorderLevel.value || 0)), lead_time_days: Math.max(0, Number(form.elements.leadTimeDays.value || 0)) };
+      const payload = { id, owner_id: user.id, kind: 'product', name: form.elements.name.value.trim(), cost: productCost, buffer, occasions: events, photo: image, contents: '', component_ids: [], sku: existing?.sku || id, supplier_name: form.elements.supplier.value.trim(), catalogue_role: form.elements.catalogueRole.value, collection_tags: productTags, reorder_level: Math.max(0, Number(form.elements.reorderLevel.value || 0)), lead_time_days: Math.max(0, Number(form.elements.leadTimeDays.value || 0)) };
       const { error } = await db.from('library_items').upsert(payload);
       if (error) throw error;
       if (payload.supplier_name) {
@@ -577,7 +578,7 @@ async function pdfTileData(product) {
           context.beginPath();
           context.moveTo(radius, 0); context.arcTo(size, 0, size, size, radius); context.arcTo(size, size, 0, size, radius); context.arcTo(0, size, 0, 0, radius); context.arcTo(0, 0, size, 0, radius); context.closePath();
           context.clip();
-          const scale = Math.min(size / image.naturalWidth, size / image.naturalHeight);
+          const scale = Math.max(size / image.naturalWidth, size / image.naturalHeight);
           const drawWidth = image.naturalWidth * scale, drawHeight = image.naturalHeight * scale;
           context.drawImage(image, (size - drawWidth) / 2, (size - drawHeight) / 2, drawWidth, drawHeight);
           resolve(canvas.toDataURL('image/png'));
@@ -608,7 +609,6 @@ async function drawPdfProductGallery(doc, items, { centerX = 105, top, columns, 
     const x = centerX - rowWidth / 2 + (index - rowStart) * (tileSize + gap);
     const y = top + row * (tileSize + gap);
     await pdfProductImage(doc, items[index], x, y, tileSize, tileSize);
-    if (index + 1 < rowStart + itemsInRow) pdfCenteredText(doc, '+', x + tileSize + gap / 2, y + tileSize / 2 + .5, { font: 'times', size: Math.max(11, tileSize * .65), color: pdfPalette.gold });
   }
   return rows * tileSize + Math.max(0, rows - 1) * gap;
 }
@@ -889,7 +889,7 @@ function renderInventory() {
   const query = inventorySearch.trim().toLowerCase();
   const matching = products.filter(product => {
     const health = inventoryHealth(product);
-    return (!query || product.name.toLowerCase().includes(query) || product.id.toLowerCase().includes(query)) && (inventoryStatus === 'all' || health.key === inventoryStatus);
+    return (!query || ProductCatalogue.matches(product,query) || product.id.toLowerCase().includes(query)) && (inventoryStatus === 'all' || health.key === inventoryStatus);
   });
   const totalPages = Math.max(1, Math.ceil(matching.length / inventoryPageSize));
   inventoryPage = Math.min(Math.max(1, inventoryPage), totalPages);
@@ -951,6 +951,12 @@ function expenseDetail(claim) {
   if (claim.delivery_mode === 'third_party') return `Delivery · ${claim.delivery_provider || 'Third-party service'}`;
   return `Delivery · ${claim.delivery_mode === 'bike' ? 'Bike' : 'Car'} · ${Number(claim.distance_km || 0).toLocaleString('en-IN')} km @ ${money(claim.rate_per_km)}/km`;
 }
+function expenseWhatsappMessage(claim) { return ['*Meraki & Mirth — Expense claim*', `Claim: ${claim.description}`, `Submitted by: ${claim.submitted_by_name || 'Team member'}`, `Date: ${expenseDate(claim.created_at)}`, `Details: ${expenseDetail(claim)}`, ...(Number(claim.extra_amount)>0 ? [`Original: ${money(Number(claim.amount)-Number(claim.extra_amount))}`, `Extra: ${money(claim.extra_amount)}`] : []), `*Total: ${money(claim.amount)}*`, `Status: ${expenseStatusLabel(claim)}`, ...(claim.adjustment_reason ? [`Adjustment: ${claim.adjustment_reason}`] : []), ...(claim.note ? [`Note: ${claim.note}`] : [])].join('\n'); }
+async function copyExpenseClaim(id) {
+ if(!assertAccess())return;const claim=expenseClaims.find(item=>item.id===id);if(!claim)return notify('This claim is no longer available. Refresh expenses and retry.');
+ try {if(!navigator.clipboard?.writeText)throw Error('Clipboard unavailable');await navigator.clipboard.writeText(expenseWhatsappMessage(claim));notify('Claim details copied. Paste them into WhatsApp.','success');}
+ catch {notify('Could not copy. Allow clipboard access in your browser and try again.');}
+}
 function renderExpenses() {
   $('#expensePendingTotal').textContent = money(expenseSummary.pending);
   $('#expenseApprovedTotal').textContent = money(expenseSummary.approved);
@@ -960,11 +966,12 @@ function renderExpenses() {
     return `<article class="expense-balance-card"><div><span>${escapeHtml(admin.display_name)}</span>${admin.can_approve_expenses ? '<em>Approver</em>' : ''}</div><b>${money(balance.approved)}</b><small>To settle · ${money(balance.pending)} awaiting approval</small></article>`;
   }).join('');
   $('#expenseClaimCount').textContent = expenseSummary.count ? `Showing ${expenseClaims.length} of ${expenseSummary.count} claims` : '';
-  $('#expenseList').innerHTML = expenseClaims.map(claim => `<article class="expense-row"><div class="expense-row-main"><p>${escapeHtml(claim.submitted_by_name)} · ${escapeHtml(expenseDate(claim.created_at))}</p><h3>${escapeHtml(claim.description)}</h3><span>${escapeHtml(expenseDetail(claim))}${claim.note ? ` · ${escapeHtml(claim.note)}` : ''}</span></div><b>${money(claim.amount)}</b><span class="expense-status ${escapeHtml(claim.approval_status)}${claim.settled_at ? ' settled' : ''}">${escapeHtml(expenseStatusLabel(claim))}</span><div class="expense-actions">${canAdjustExpense(claim) ? `<button class="soft-btn" data-expense-adjust="${claim.id}">Edit extra amount</button>` : ''}${claim.adjustment_reason ? `<small>Original ${money(Number(claim.amount)-Number(claim.extra_amount))} + extra ${money(claim.extra_amount)} · ${escapeHtml(claim.adjustment_reason)}</small>` : ''}${canReviewExpense(claim) ? `<button class="soft-btn" data-expense-review="approved" data-expense-id="${claim.id}">Approve</button><button class="text-btn" data-expense-review="rejected" data-expense-id="${claim.id}">Reject</button>` : ''}${currentExpenseAdmin()?.can_approve_expenses && claim.approval_status === 'approved' && !claim.settled_at ? `<button class="soft-btn" data-expense-settle="${claim.id}">Mark settled</button>` : ''}${claim.approved_by_name ? `<small>Reviewed by ${escapeHtml(claim.approved_by_name)}</small>` : ''}</div></article>`).join('');
+  $('#expenseList').innerHTML = expenseClaims.map(claim => `<article class="expense-row"><div class="expense-row-main"><p>${escapeHtml(claim.submitted_by_name)} · ${escapeHtml(expenseDate(claim.created_at))}</p><h3>${escapeHtml(claim.description)}</h3><span>${escapeHtml(expenseDetail(claim))}${claim.note ? ` · ${escapeHtml(claim.note)}` : ''}</span></div><b>${money(claim.amount)}</b><span class="expense-status ${escapeHtml(claim.approval_status)}${claim.settled_at ? ' settled' : ''}">${escapeHtml(expenseStatusLabel(claim))}</span><div class="expense-actions"><button class="soft-btn" data-expense-copy="${claim.id}">Copy for WhatsApp</button>${canAdjustExpense(claim) ? `<button class="soft-btn" data-expense-adjust="${claim.id}">Edit claim amount</button>` : ''}${claim.adjustment_reason ? `<small>Original ${money(Number(claim.amount)-Number(claim.extra_amount))} + extra ${money(claim.extra_amount)} · ${escapeHtml(claim.adjustment_reason)}</small>` : ''}${canReviewExpense(claim) ? `<button class="soft-btn" data-expense-review="approved" data-expense-id="${claim.id}">Approve</button><button class="text-btn" data-expense-review="rejected" data-expense-id="${claim.id}">Reject</button>` : ''}${currentExpenseAdmin()?.can_approve_expenses && claim.approval_status === 'approved' && !claim.settled_at ? `<button class="soft-btn" data-expense-settle="${claim.id}">Mark settled</button>` : ''}${claim.approved_by_name ? `<small>Reviewed by ${escapeHtml(claim.approved_by_name)}</small>` : ''}</div></article>`).join('');
   let more = $('#expenseLoadMore');
   if (!more) { more = document.createElement('button'); more.id = 'expenseLoadMore'; more.className = 'soft-btn'; more.onclick = loadMoreExpenses; $('#expenseList').after(more); }
   more.hidden = !expenseHasMore; more.disabled = expensePageLoading; more.textContent = expensePageLoading ? 'Loading…' : 'Load more expenses';
   $('#expenseEmpty').hidden = expenseClaims.length > 0;
+  document.querySelectorAll('[data-expense-copy]').forEach(button => button.onclick = () => copyExpenseClaim(button.dataset.expenseCopy));
   document.querySelectorAll('[data-expense-adjust]').forEach(button => button.onclick = () => openExpenseAdjustment(button.dataset.expenseAdjust));
   document.querySelectorAll('[data-expense-review]').forEach(button => button.onclick = () => reviewExpense(button.dataset.expenseId, button.dataset.expenseReview));
   document.querySelectorAll('[data-expense-settle]').forEach(button => button.onclick = () => settleExpense(button.dataset.expenseSettle));
@@ -1114,11 +1121,11 @@ for(const [id,kind] of [['catalogueCombosTab','combos'],['catalogueProductsTab',
  tab.onkeydown=event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();setCatalogueTab(event.key==='Home'?'combos':event.key==='End'?'products':kind==='combos'?'products':'combos',true);};
 }
 // Use existing metadata and optimized export images.
-function productCatalogueOptions() { return { min:$('#pcMin').value,max:$('#pcMax').value,occasion:$('#pcOccasion').value,role:$('#pcRole').value,tag:$('#pcTag').value,from:$('#pcFrom').value,to:$('#pcTo').value }; }
+function productCatalogueOptions() { return { search:$('#pcSearch').value,min:$('#pcMin').value,max:$('#pcMax').value,occasion:$('#pcOccasion').value,role:$('#pcRole').value,tag:$('#pcTag').value,from:$('#pcFrom').value,to:$('#pcTo').value }; }
 function renderProductCatalogue() {
  const optionList = (id,values,label) => { const select=$(id),prior=select.value; select.innerHTML='<option value="">'+label+'</option>'+values.map(value=>`<option value="${escapeHtml(value)}">${escapeHtml(id==='#pcOccasion'?tagLabel(value):value)}</option>`).join(''); if(values.includes(prior))select.value=prior; };
  optionList('#pcOccasion',[...new Set(products.flatMap(p=>p.events).filter(tag=>tag!=='all'))].sort(),'All occasions');
- optionList('#pcTag',[...new Set(products.flatMap(p=>p.collectionTags || []))].sort(),'All collections');
+ optionList('#pcTag',[...new Set(products.flatMap(p=>ProductCatalogue.productTags(p)))].sort(),'All tags');
  const options=productCatalogueOptions();
  const invalid=(options.min!==''&&Number(options.min)<0)||(options.max!==''&&Number(options.max)<0)||(options.min!==''&&options.max!==''&&Number(options.min)>Number(options.max))||(options.from&&options.to&&options.from>options.to);
  const visible=invalid?[]:ProductCatalogue.filter(products,options), ids=new Set(visible.map(p=>p.id));
@@ -1145,7 +1152,7 @@ async function exportProductCatalogue() {
   if(isNativeApp())await shareNativePdf(doc,filename,'Gift catalogue');else await saveExportBlob(doc.output('blob'),filename,'Gift catalogue');
  } catch(error){notify(error.message);}finally{pdfTileCache.clear();setExportPending(button,false);}
 }
-['pcMin','pcMax','pcOccasion','pcRole','pcTag','pcFrom','pcTo'].forEach(id=>{ $('#'+id).addEventListener('change',renderProductCatalogue); if(['pcMin','pcMax'].includes(id))$('#'+id).addEventListener('input',renderProductCatalogue); });
+['pcSearch','pcMin','pcMax','pcOccasion','pcRole','pcTag','pcFrom','pcTo'].forEach(id=>{ $('#'+id).addEventListener('change',renderProductCatalogue); if(['pcSearch','pcMin','pcMax'].includes(id))$('#'+id).addEventListener('input',renderProductCatalogue); });
 $('#pcSelectAll').onclick=()=>{ProductCatalogue.filter(products,productCatalogueOptions()).forEach(p=>productCatalogueSelection.add(p.id));renderProductCatalogue();};
 $('#pcClear').onclick=()=>{productCatalogueSelection.clear();renderProductCatalogue();};
 $('#pcExport').onclick=exportProductCatalogue;

@@ -381,3 +381,5 @@ dialog>.close:focus-visible,dialog form>.close:focus-visible{outline:3px solid #
 @media(max-width:1100px){#catalogueProductsPanel .product-catalogue-filters{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:640px){.catalogue-tabs{gap:24px;margin-bottom:18px}.catalogue-tabs [role=tab]{font-size:14px}#catalogueProductsPanel .product-catalogue-panel{padding:14px}#catalogueProductsPanel .product-catalogue-filters{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.pc-export-settings{align-items:stretch;flex-direction:column;gap:12px}.pc-actions{align-items:stretch;gap:14px}.pc-actions>.primary-btn{width:100%}.pc-selection-actions{gap:10px}#pcProducts{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.pc-choice .product-photo{height:125px}.pc-choice h3{font-size:16px}.pc-date-filters{grid-template-columns:repeat(2,minmax(0,1fr))}}
 #catalogueProductsPanel label[hidden]{display:none!important}
+
+#catalogueProductsPanel .pc-search{display:block;max-width:520px;margin:0 0 18px}.expense-actions{flex-wrap:wrap}.expense-actions [data-expense-copy]{white-space:normal}
