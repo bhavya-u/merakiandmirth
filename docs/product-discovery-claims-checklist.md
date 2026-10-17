@@ -25,3 +25,7 @@ Production schema remains unchanged. General tags reuse the pending 202610160001
 ## Verification
 
 48 automated tests passed. Local SQL checks covered claim ownership, audit history, idempotent retries, revision conflicts, reapproval and settled-claim protection. Browser checks verified product tag save/reopen, tag-only search, role/tag catalogue filtering, WhatsApp clipboard output and the edit dialog. Mixed-ratio PDF layouts were rendered and visually inspected; temporary local product and claim records were removed. Production data and stored images were not modified.
+
+## 17 October production-backed preview update
+
+The user approved enabling tags on port 4173. Migration 202610160001 was applied and recorded in production; existing library row values were verified unchanged by before/after checksums. The compatible preview now reads/writes tags and roles, supports tag search and gift filters, and was rebuilt/restarted. Expense/quote migrations remain pending; local auto-login is not included in this preview. Existing products require manual tagging.
