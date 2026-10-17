@@ -2,18 +2,21 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import { root, status } from './common.mjs';
+const port=Number(process.env.PORT||4173);
 const settings = status();
-const config = { url: settings.API_URL, anonKey: settings.ANON_KEY, environment: 'local', disableNotifications: true };
+const { owner } = JSON.parse(await readFile(`${root}/.local/test-accounts.json`, 'utf8'));
+if (owner?.email !== 'owner@example.test' || !owner.password) throw new Error('Run the local seed before starting the development server.');
+const config = { url: settings.API_URL, anonKey: settings.ANON_KEY, environment: 'local', disableNotifications: true, localTestLogin: { email: owner.email, password: owner.password } };
 if (!config.anonKey) throw new Error('Local anon key missing.');
 const csp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' http://127.0.0.1:54321 data: blob:; connect-src 'self' http://127.0.0.1:54321 ws://127.0.0.1:54321; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json' };
-const allowed = new Set(['product-images.js', 'app.js', 'styles.css', 'manifest.webmanifest', 'flow.css', 'overrides.css', 'review-fixes.css']);
+const allowed = new Set(['product-images.js', 'expense-export.js', 'product-catalogue.js', 'app.js', 'styles.css', 'manifest.webmanifest', 'flow.css', 'overrides.css', 'review-fixes.css']);
 const server = http.createServer(async (req, res) => {
   res.setHeader('Content-Security-Policy', csp);
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   try {
-    if (req.headers.host !== '127.0.0.1:4173' && req.headers.host !== 'localhost:4173') { res.writeHead(403); return res.end(); }
+    if (req.headers.host !== `127.0.0.1:${port}` && req.headers.host !== `localhost:${port}`) { res.writeHead(403); return res.end(); }
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); return res.end(); }
     const pathname = decodeURIComponent(new URL(req.url, 'http://127.0.0.1:4173').pathname);
     let data, type = 'text/javascript';
@@ -41,12 +44,23 @@ const server = http.createServer(async (req, res) => {
       let path;
       if (pathname === '/vendor/supabase.js') path = `${root}/node_modules/@supabase/supabase-js/dist/umd/supabase.js`;
       else if (pathname === '/vendor/jspdf.umd.min.js') path = `${root}/node_modules/jspdf/dist/jspdf.umd.min.js`;
+      else if (pathname === '/vendor/exceljs.min.js') path = `${root}/node_modules/exceljs/dist/exceljs.min.js`;
       else if (allowed.has(pathname.slice(1))) path = `${root}${pathname}`;
       else if (pathname.startsWith('/assets/')) {
         path = resolve(root, '.' + pathname);
         if (!path.startsWith(resolve(root, 'assets') + sep)) { res.writeHead(403); return res.end(); }
       } else { res.writeHead(404); return res.end(); }
       data = await readFile(path);
+      if (pathname === '/app.js') {
+        data = data.toString().replace(
+          'db.auth.getSession().then(({ data, error })',
+          `db.auth.getSession().then(async result => {
+            if (result.data.session || result.error) return result;
+            if (config.environment !== 'local' || config.url !== 'http://127.0.0.1:54321') throw new Error('Local auto-login refused outside local Supabase.');
+            return db.auth.signInWithPassword(config.localTestLogin);
+          }).then(({ data, error })`
+        );
+      }
       type = types[extname(path)] || 'application/octet-stream';
       if (pathname.startsWith('/assets/')) res.setHeader('Cache-Control', 'public, max-age=3600');
     }
@@ -54,4 +68,4 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200); res.end(req.method === 'HEAD' ? undefined : data);
   } catch { res.writeHead(404); res.end('Not found'); }
 });
-server.listen(4173, '127.0.0.1', () => console.log('Local test app: http://127.0.0.1:4173 (production connections blocked)'));
+server.listen(port, '127.0.0.1', () => console.log(`Local test app: http://127.0.0.1:${port} (production connections blocked)`));

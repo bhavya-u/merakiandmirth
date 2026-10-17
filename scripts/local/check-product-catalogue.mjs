@@ -1,0 +1,5 @@
+import '../../product-catalogue.js';import {jsPDF} from 'jspdf';import sharp from 'sharp';import {readFile,writeFile} from 'node:fs/promises';
+const manifest=JSON.parse(await readFile('.local/image-variants/manifest.json','utf8'));
+const products=manifest.slice(0,3).map((p,i)=>({...p,name:['German silver gift bowl with decorative detailing','Wooden keepsake box for a memorable celebration','A very long product name showing the full description of a handcrafted festive gift'][i],sku:`GIFT-${i+1}`,baseCost:100+i*50,buffer:8}));
+for(const showPrices of [true,false]){const doc=await ProductCatalogue.pdf({jsPDF,products,showPrices,client:'Sample client',image:async p=>'data:image/png;base64,'+(await sharp(p.variants.export.file).resize(720,720,{fit:'cover',background:'#ffffff'}).png().toBuffer()).toString('base64')});await writeFile(`.local/product-catalogue-${showPrices?'prices':'no-prices'}.pdf`,Buffer.from(doc.output('arraybuffer')));}
+console.log('Rendered real product catalogue export functions with local images, prices on and off.');

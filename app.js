@@ -1,3 +1,5 @@
+function isOnlineSupplier(supplier) { const value = String(supplier || '').trim(); if (/\b(meesho|flipkart|amazon|myntra|ajio|indiamart)\b/i.test(value)) return true; const candidate = value.match(/https?:\/\/[^\s]+/i)?.[0] || (/^(?:www\.)?(?:[a-z0-9-]+\.)+[a-z]{2,}(?:[/:?#][^\s]*)?$/i.test(value) ? 'https://' + value : ''); if (!candidate) return false; try { const url = new URL(candidate); return ['http:','https:'].includes(url.protocol) && url.hostname.includes('.'); } catch { return false; } }
+function onlineProductBadge(product) { return isOnlineSupplier(product.supplier) ? `<span class="online-product-badge" title="Online supplier: ${escapeHtml(product.supplier)}"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18M5 6h14M5 18h14"/></svg>Online</span>` : ''; }
 const $ = selector => document.querySelector(selector);
 const money = value => {
   const amount = Number(value || 0);
@@ -38,7 +40,7 @@ async function fetchWorkspaceRead(resource, options) {
 window.fetch = async (resource, options = {}) => {
   const requestUrl = resource instanceof Request ? resource.url : String(resource);
   const method = (options.method || (resource instanceof Request ? resource.method : 'GET')).toUpperCase();
-  const isReadOnlyRpc = /\/rest\/v1\/rpc\/(workspace_access_state|workspace_expense_people|workspace_expense_summary|workspace_order_summary|workspace_client_order_summary)(?:\?|$)/.test(requestUrl);
+  const isReadOnlyRpc = /\/rest\/v1\/rpc\/(workspace_access_state|workspace_expense_people|workspace_expense_summary|export_expense_settlement|workspace_order_summary|workspace_client_order_summary)(?:\?|$)/.test(requestUrl);
   const isSupabaseWrite = !isReadOnlyRpc && /\/((rest|storage|functions)\/v1)\//.test(requestUrl) && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
   if (requestUrl.startsWith(`${config?.url}/rest/v1/`) && (method === 'GET' || isReadOnlyRpc)) return fetchWorkspaceRead(resource, options);
   if (!isSupabaseWrite) return browserFetch(resource, options);
@@ -79,7 +81,9 @@ let vendors = [];
 let contactsTab = 'clients';
 let clientSearch = '';
 let vendorSearch = '';
+const productCatalogueSelection = new Set();
 let quoteAdditionalCosts = [];
+let editingQuote = null, savingQuote = false;
 let ordersFrom = currentYearDateRange().from;
 let ordersTo = currentYearDateRange().to;
 let openOrderId = null;
@@ -98,9 +102,9 @@ async function runDatabaseUpdate(message, work) { setDatabaseUpdateState(true, m
 function assertAccess() { if (!accessGranted) { notify('Sign in with an approved email and password first.'); return false; } return true; }
 function parseContents(value) { try { return JSON.parse(value || '{}'); } catch { return {}; } }
 function roundedProductPrice(cost, buffer) { return Math.round(Math.max(0, Number(cost || 0)) + Math.max(0, Number(buffer || 0))); }
-function productFromRow(row) { const baseCost = Number(row.cost || 0), buffer = Number(row.buffer || 0), rate = row.rounded_price == null ? roundedProductPrice(baseCost, buffer) : Number(row.rounded_price); return { id: row.id, sku: row.sku || row.id, name: row.name, baseCost, buffer, rate, events: (row.occasions?.length ? row.occasions : ['all']).map(normalizeTag), image: row.photo || '', stockOnHand: Number(row.stock_on_hand || 0), reorderLevel: Number(row.reorder_level || 0), supplier: row.supplier_name || '', leadTimeDays: Number(row.lead_time_days || 0), createdAt: row.created_at || '' }; }
+function productFromRow(row) { const baseCost = Number(row.cost || 0), buffer = Number(row.buffer || 0), rate = row.rounded_price == null ? roundedProductPrice(baseCost, buffer) : Number(row.rounded_price); return { id: row.id, sku: row.sku || row.id, name: row.name, baseCost, buffer, rate, events: (row.occasions?.length ? row.occasions : ['all']).map(normalizeTag), image: row.photo || '', stockOnHand: Number(row.stock_on_hand || 0), reorderLevel: Number(row.reorder_level || 0), supplier: row.supplier_name || '', catalogueRole: row.catalogue_role || '', collectionTags: row.collection_tags || [], leadTimeDays: Number(row.lead_time_days || 0), createdAt: row.created_at || '' }; }
 function comboFromRow(row) { const meta = parseContents(row.contents); return { id: row.id, occasion: row.occasions?.[0] || '', name: row.name, rate: Number(row.cost || 0), margin: Number(meta.margin ?? 30), productIds: row.component_ids || [] }; }
-function orderFromRow(row) { const primary = row.items?.[0] || {}; const comboId = row.combo_id || primary.comboId || ''; const combo = combos.find(item => item.id === comboId); const quantity = Number(row.qty || 0); const unitCost = Number(primary.unitCost ?? (combo ? comboCost(combo.productIds) : 0)); const costSnapshot = Number(row.cost_snapshot || unitCost * quantity); const expensesTotal = Number(row.expenses_total || 0); const profit = Number(row.total) - costSnapshot - expensesTotal; const profitRealised = profitStatuses.has(row.status); const additionalCosts = (row.additional_costs || primary.additionalCosts || []).map(item => ({ label: String(item.label || 'Additional cost'), amount: Math.max(0, Number(item.amount || 0)) })).filter(item => item.amount > 0); return { id: row.id, clientId: row.client_id || '', code: row.code, comboId, comboName: primary.comboName || combo?.name || row.title, title: row.title, occasion: row.event, quantity, total: Number(row.total), status: row.status, customerName: row.customer_name || '', customerPhone: row.customer_phone || '', deliveryArea: row.delivery_area || '', specialRequest: row.special_request || '', complimentary: row.complimentary || primary.complimentary || '', eventDate: row.event_date || primary.eventDate || '', deliveryDate: row.delivery_date || primary.deliveryDate || '', netWrapping: Boolean(row.net_wrapping ?? primary.netWrapping), netWrappingUnitPrice: Number(row.net_wrapping_unit_price ?? primary.netWrappingUnitPrice ?? 0), additionalCosts, thankYouCardCode: row.thank_you_card_code || primary.thankYouCardCode || '', thankYouCardStyle: row.thank_you_card_style || primary.thankYouCardStyle || 'none', thankYouCardUnitPrice: Number(row.thank_you_card_unit_price ?? primary.thankYouCardUnitPrice ?? 0), thankYouCardDesignFee: Number(row.thank_you_card_design_fee ?? primary.thankYouCardDesignFee ?? 0), discountPercent: Number(row.discount_percent ?? primary.discountPercent ?? 0), discountAmount: Number(row.discount_amount ?? primary.discountAmount ?? 0), subtotalBeforeDiscount: Number(row.subtotal_before_discount ?? primary.subtotalBeforeDiscount ?? row.total ?? 0), quoteSentAt: row.quote_sent_at || '', createdAt: row.created_at, created: new Date(row.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }), costSnapshot, expensesTotal, profit, profitRealised }; }
+function orderFromRow(row) { const primary = row.items?.[0] || {}; const comboId = row.combo_id || primary.comboId || ''; const combo = combos.find(item => item.id === comboId); const quantity = Number(row.qty || 0); const unitCost = Number(primary.unitCost ?? (combo ? comboCost(combo.productIds) : 0)); const costSnapshot = Number(row.cost_snapshot || unitCost * quantity); const expensesTotal = Number(row.expenses_total || 0); const profit = Number(row.total) - costSnapshot - expensesTotal; const profitRealised = profitStatuses.has(row.status); const additionalCosts = (row.additional_costs || primary.additionalCosts || []).map(item => ({ label: String(item.label || 'Additional cost'), amount: Math.max(0, Number(item.amount || 0)) })).filter(item => item.amount > 0); return { id: row.id, clientId: row.client_id || '', code: row.code, comboId, comboName: primary.comboName || combo?.name || row.title, title: row.title, occasion: row.event, quantity, total: Number(row.total), status: row.status, customerName: row.customer_name || '', customerPhone: row.customer_phone || '', deliveryArea: row.delivery_area || '', specialRequest: row.special_request || '', complimentary: row.complimentary || primary.complimentary || '', eventDate: row.event_date || primary.eventDate || '', deliveryDate: row.delivery_date || primary.deliveryDate || '', netWrapping: Boolean(row.net_wrapping ?? primary.netWrapping), netWrappingUnitPrice: Number(row.net_wrapping_unit_price ?? primary.netWrappingUnitPrice ?? 0), additionalCosts, thankYouCardCode: row.thank_you_card_code || primary.thankYouCardCode || '', thankYouCardStyle: row.thank_you_card_style || primary.thankYouCardStyle || 'none', thankYouCardUnitPrice: Number(row.thank_you_card_unit_price ?? primary.thankYouCardUnitPrice ?? 0), thankYouCardDesignFee: Number(row.thank_you_card_design_fee ?? primary.thankYouCardDesignFee ?? 0), discountType: String(primary.discountType || '').trim().slice(0, 60), discountPercent: Number(row.discount_percent ?? primary.discountPercent ?? 0), discountAmount: Number(row.discount_amount ?? primary.discountAmount ?? 0), subtotalBeforeDiscount: Number(row.subtotal_before_discount ?? primary.subtotalBeforeDiscount ?? row.total ?? 0), quoteSentAt: row.quote_sent_at || '', createdAt: row.created_at, created: new Date(row.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }), costSnapshot, expensesTotal, profit, profitRealised }; }
 function productMatchesEvent(product, event) { const tag = normalizeTag(event); return tag === 'all_products' || product.events.includes('all') || product.events.includes(tag); }
 function currentOccasion() { return $('#occasion').value; }
 function uniqueOccasions() { return [...new Set(combos.map(combo => normalizeTag(combo.occasion)).filter(Boolean))]; }
@@ -158,7 +162,7 @@ function refreshOrderRange() {
   orderRevision++;
   void hydrateFromSupabase(['orders']).catch(error => notify(`Could not refresh orders: ${error.message}`));
 }
-const expenseFields = 'id,submitted_by_id,submitted_by_name,expense_type,description,vendor,delivery_mode,delivery_provider,distance_km,rate_per_km,amount,note,approval_status,approved_by_name,settled_at,created_at';
+const expenseFields = 'id,submitted_by_id,submitted_by_name,expense_type,description,vendor,delivery_mode,delivery_provider,distance_km,rate_per_km,amount,extra_amount,adjustment_reason,revision,note,approval_status,approved_by_name,settled_at,created_at';
 let expenseSummary = { count: 0, pending: 0, approved: 0, settled: 0, people: [] };
 let expenseHasMore = false;
 let expensePageLoading = false;
@@ -247,7 +251,7 @@ async function fetchAllMetadata(makeQuery, key = 'id') {
 }
 function dataQueries() {
   return {
-    items: async () => { const result = await fetchAllMetadata(() => db.from('library_items').select('id,kind,name,cost,buffer,rounded_price,contents,component_ids,occasions,photo,sku,stock_on_hand,reorder_level,supplier_name,lead_time_days,created_at')); result.data?.sort((a,b) => a.name.localeCompare(b.name)); return result; },
+    items: async () => { const result = await fetchAllMetadata(() => db.from('library_items').select('id,kind,name,cost,buffer,rounded_price,contents,component_ids,occasions,photo,sku,stock_on_hand,reorder_level,supplier_name,lead_time_days,created_at,catalogue_role,collection_tags')); result.data?.sort((a,b) => a.name.localeCompare(b.name)); return result; },
     orders: async () => { const from = ordersFrom, to = ordersTo; const [page, summary] = await Promise.all([orderPageQuery(), db.rpc('workspace_order_summary', { p_from: from || null, p_to: to || null })]); return { error: page.error || summary.error, data: { rows: (page.data || []).slice(0,50), more: (page.data || []).length > 50, summary: summary.data, from, to } }; },
     occasions: () => db.from('occasion_types').select('code,label,sort_order').eq('active', true).order('sort_order'),
     expenses: async () => { const [page, summary] = await Promise.all([expensePageQuery(), db.rpc('workspace_expense_summary')]); return { error: page.error || summary.error, data: { rows: (page.data || []).slice(0, 50), more: (page.data || []).length > 50, summary: summary.data } }; },
@@ -260,6 +264,8 @@ function dataQueries() {
 
 async function updateAccess(session) {
   dataEpoch++;
+  resetQuoteEdit();
+  productCatalogueSelection.clear();
   datasetReadTimes.clear();
   workspaceReadControllers.forEach(controller => controller.abort());
   navigationRequest++;
@@ -342,7 +348,7 @@ function renderPicker() {
   const minimum = Number(studioBudgetMin || 0);
   const maximum = studioBudgetMax === '' ? Number.POSITIVE_INFINITY : Math.max(0, Number(studioBudgetMax));
   const visible = available
-    .filter(product => (!query || product.name.toLowerCase().includes(query)) && product.rate >= minimum && product.rate <= maximum)
+    .filter(product => (!query || ProductCatalogue.matches(product,query)) && product.rate >= minimum && product.rate <= maximum)
     .sort((left, right) => {
       const byName = left.name.localeCompare(right.name, undefined, { sensitivity: 'base' });
       const byPrice = Number(left.rate) - Number(right.rate);
@@ -387,10 +393,10 @@ async function saveCombo() { if (!assertAccess()) return; const draft = comboDra
 async function deleteCombo(id) { if (!assertAccess() || !confirm('Delete this combo?')) return; const { error } = await db.from('library_items').delete().eq('id', id); if (error) return notify(error.message); if (editingCombo === id) clearCombo(); await hydrateFromSupabase(['items', 'orders']); }
 function openComboDetail(id) { const combo = combos.find(item => item.id === id); if (!combo) return notify('This saved combo is no longer available.'); const items = combo.productIds.map(productId => products.find(product => product.id === productId)).filter(Boolean); $('#comboDetail').innerHTML = `<p class="section-label">SAVED COMBO</p><h2>${escapeHtml(combo.name)}</h2><p class="combo-detail-occasion">${escapeHtml(tagLabel(normalizeTag(combo.occasion)))}</p><div class="combo-detail-summary"><div><span>Product cost</span><b>${money(comboCost(combo.productIds))}</b></div><div><span>Margin</span><b>${Number(combo.margin || 0)}%</b></div><div><span>Final price</span><b>${money(liveComboRate(combo))}</b></div></div><section class="combo-detail-products"><p class="section-label">WHAT’S INCLUDED</p>${items.length ? `<div class="combo-detail-product-grid">${items.map(product => `<article><div>${imageMarkup(product, 'combo-detail-product-image')}</div><b>${escapeHtml(product.name)}</b><span>${money(product.rate)}</span></article>`).join('')}</div>` : '<p class="muted">The products in this saved combo are no longer available.</p>'}</section>`; $('#comboDetailDialog').showModal(); }
 function productStockStatus(product) { if (product.stockOnHand <= 0) return 'Out of stock'; if (product.stockOnHand <= product.reorderLevel) return 'Low stock'; return 'In stock'; }
-function openProductDetail(product) { if (!product) return notify('This product is no longer available.'); const stockStatus = productStockStatus(product); const units = count => `${count} unit${Number(count) === 1 ? '' : 's'}`; $('#productDetail').innerHTML = `<div class="product-detail-layout"><div class="product-detail-image">${imageMarkup(product, 'product-detail-photo')}</div><div class="product-detail-copy"><p class="section-label">PRODUCT DETAIL</p><h2>${escapeHtml(product.name)}</h2><p class="product-detail-sku">PRODUCT ID · ${escapeHtml(product.sku)}</p><div class="product-detail-price"><span>Final product price</span><strong>${money(product.rate)}</strong></div></div></div><div class="product-detail-grid"><div><span>Product cost</span><b>${money(product.baseCost)}</b></div><div><span>Buffer</span><b>${money(product.buffer)}</b></div><div><span>In inventory</span><b>${units(product.stockOnHand)}</b></div><div><span>Stock status</span><b class="product-stock-${stockStatus === 'In stock' ? 'good' : stockStatus === 'Low stock' ? 'low' : 'out'}">${stockStatus}</b></div><div><span>Reorder at</span><b>${units(product.reorderLevel)}</b></div><div><span>Supplier lead time</span><b>${product.leadTimeDays ? `${product.leadTimeDays} day${product.leadTimeDays === 1 ? '' : 's'}` : 'Not set'}</b></div></div><section class="product-detail-section"><span>Vendor</span><b>${escapeHtml(product.supplier || 'Not set')}</b></section><section class="product-detail-section"><span>Suitable occasions</span><p>${escapeHtml(product.events.map(tagLabel).join(' · '))}</p></section><p class="product-detail-added">${product.createdAt ? `Added ${escapeHtml(formattedDate(String(product.createdAt).slice(0, 10)))}` : 'Added date not available for this product.'}</p>`; $('#productDetailDialog').showModal(); }
+function openProductDetail(product) { if (!product) return notify('This product is no longer available.'); const stockStatus = productStockStatus(product); const units = count => `${count} unit${Number(count) === 1 ? '' : 's'}`; $('#productDetail').innerHTML = `<div class="product-detail-layout"><div class="product-detail-image">${imageMarkup(product, 'product-detail-photo')}</div><div class="product-detail-copy"><p class="section-label">PRODUCT DETAIL</p><h2>${escapeHtml(product.name)}</h2>${onlineProductBadge(product)}<p class="product-detail-sku">PRODUCT ID · ${escapeHtml(product.sku)}</p><div class="product-detail-price"><span>Final product price</span><strong>${money(product.rate)}</strong></div></div></div><div class="product-detail-grid"><div><span>Product cost</span><b>${money(product.baseCost)}</b></div><div><span>Buffer</span><b>${money(product.buffer)}</b></div><div><span>In inventory</span><b>${units(product.stockOnHand)}</b></div><div><span>Stock status</span><b class="product-stock-${stockStatus === 'In stock' ? 'good' : stockStatus === 'Low stock' ? 'low' : 'out'}">${stockStatus}</b></div><div><span>Reorder at</span><b>${units(product.reorderLevel)}</b></div><div><span>Supplier lead time</span><b>${product.leadTimeDays ? `${product.leadTimeDays} day${product.leadTimeDays === 1 ? '' : 's'}` : 'Not set'}</b></div></div><section class="product-detail-section"><span>Vendor</span><b>${escapeHtml(product.supplier || 'Not set')}</b></section><section class="product-detail-section"><span>Suitable occasions</span><p>${escapeHtml(product.events.map(tagLabel).join(' · '))}</p></section><p class="product-detail-added">${product.createdAt ? `Added ${escapeHtml(formattedDate(String(product.createdAt).slice(0, 10)))}` : 'Added date not available for this product.'}</p>`; $('#productDetailDialog').showModal(); }
 function addOrderComboLink(order) { if (!order.comboId || !combos.some(combo => combo.id === order.comboId)) return; const section = $('#orderDetail .order-detail-section'); const name = section?.querySelector('b'); if (!name) return; const button = document.createElement('button'); button.type = 'button'; button.className = 'combo-detail-link'; button.textContent = order.comboName; const hint = document.createElement('span'); hint.textContent = 'View combo →'; button.append(hint); button.onclick = () => { $('#orderDetailDialog').close(); openComboDetail(order.comboId); }; name.replaceWith(button); }
 
-function renderLibrary() { syncOccasionLists(); $('#librarySearch').value = librarySearch; $('#librarySort').value = librarySort; const query = librarySearch.trim().toLowerCase(); const visible = products.filter(product => (libraryEvent === 'all_products' || productMatchesEvent(product, libraryEvent)) && (!query || product.name.toLowerCase().includes(query))); const createdAt = product => new Date(product.createdAt || 0).getTime() || 0; visible.sort((first, second) => { if (librarySort === 'rate-asc') return first.rate - second.rate || first.name.localeCompare(second.name); if (librarySort === 'rate-desc') return second.rate - first.rate || first.name.localeCompare(second.name); if (librarySort === 'added-desc') return createdAt(second) - createdAt(first) || first.name.localeCompare(second.name); if (librarySort === 'added-asc') return createdAt(first) - createdAt(second) || first.name.localeCompare(second.name); return first.name.localeCompare(second.name); }); $('#libraryGrid').innerHTML = visible.map(product => `<article class="product-card"><button type="button" class="product-card-body" data-product-view="${product.id}" aria-label="View ${escapeHtml(product.name)} product details">${imageMarkup(product, 'product-photo')}<div><p>${escapeHtml(product.events.map(tagLabel).join(' · '))}</p><h3>${escapeHtml(product.name)}</h3><b>${product.rate ? money(product.rate) : 'Rate not set'}</b></div></button><div class="card-actions"><button data-product-view="${product.id}">View</button><button data-product-edit="${product.id}">Edit</button><button data-product-delete="${product.id}">Delete</button></div></article>`).join(''); $('#libraryEmpty').hidden = visible.length > 0; $('#libraryEmpty').textContent = products.length ? (query ? `No products match “${librarySearch.trim()}”.` : `No products are tagged for ${tagLabel(libraryEvent)}.`) : 'Your product library is empty. Add the first product to begin.'; document.querySelectorAll('[data-product-view]').forEach(button => button.onclick = () => openProductDetail(products.find(product => product.id === button.dataset.productView))); document.querySelectorAll('[data-product-edit]').forEach(button => button.onclick = () => openProductDialog(products.find(product => product.id === button.dataset.productEdit))); document.querySelectorAll('[data-product-delete]').forEach(button => button.onclick = () => deleteProduct(button.dataset.productDelete)); }
+function renderLibrary() { syncOccasionLists(); $('#librarySearch').value = librarySearch; $('#librarySort').value = librarySort; const query = librarySearch.trim().toLowerCase(); const visible = products.filter(product => (libraryEvent === 'all_products' || productMatchesEvent(product, libraryEvent)) && (!query || ProductCatalogue.matches(product,query))); const createdAt = product => new Date(product.createdAt || 0).getTime() || 0; visible.sort((first, second) => { if (librarySort === 'rate-asc') return first.rate - second.rate || first.name.localeCompare(second.name); if (librarySort === 'rate-desc') return second.rate - first.rate || first.name.localeCompare(second.name); if (librarySort === 'added-desc') return createdAt(second) - createdAt(first) || first.name.localeCompare(second.name); if (librarySort === 'added-asc') return createdAt(first) - createdAt(second) || first.name.localeCompare(second.name); return first.name.localeCompare(second.name); }); $('#libraryGrid').innerHTML = visible.map(product => `<article class="product-card"><button type="button" class="product-card-body" data-product-view="${product.id}" aria-label="View ${escapeHtml(product.name)} product details">${imageMarkup(product, 'product-photo')}<div><p>${escapeHtml(product.events.map(tagLabel).join(' · '))}</p><h3>${escapeHtml(product.name)}</h3>${onlineProductBadge(product)}<b>${product.rate ? money(product.rate) : 'Rate not set'}</b></div></button><div class="card-actions"><button data-product-view="${product.id}">View</button><button data-product-edit="${product.id}">Edit</button><button data-product-delete="${product.id}">Delete</button></div></article>`).join(''); $('#libraryEmpty').hidden = visible.length > 0; $('#libraryEmpty').textContent = products.length ? (query ? `No products match “${librarySearch.trim()}”.` : `No products are tagged for ${tagLabel(libraryEvent)}.`) : 'Your product library is empty. Add the first product to begin.'; document.querySelectorAll('[data-product-view]').forEach(button => button.onclick = () => openProductDetail(products.find(product => product.id === button.dataset.productView))); document.querySelectorAll('[data-product-edit]').forEach(button => button.onclick = () => openProductDialog(products.find(product => product.id === button.dataset.productEdit))); document.querySelectorAll('[data-product-delete]').forEach(button => button.onclick = () => deleteProduct(button.dataset.productDelete)); }
 function openOccasionDialog() { if (!assertAccess()) return; renderOccasionManager(); $('#occasionDialog').showModal(); }
 function renderOccasionManager() {
   const manager = $('#occasionManager');
@@ -405,7 +411,7 @@ async function renameOccasion(code, label) { if (!label) throw new Error('Enter 
 async function removeOccasion(code, replacementCode) { const { error } = await db.rpc('remove_workspace_occasion', { p_code: code, p_replacement_code: replacementCode }); if (error) throw error; await hydrateFromSupabase(['occasions', 'items', 'orders']); renderOccasionManager(); notify('Occasion removed and existing tags reassigned.', 'success'); }
 function syncProductRoundedPrice() { const form = $('#productForm'); if (!form) return; $('#productRoundedPrice').value = money(roundedProductPrice(form.elements.rate.value, form.elements.buffer.value)); }
 function syncProductBufferDefault() { const form = $('#productForm'); if (!form) return; if (form.dataset.bufferManuallyEdited !== 'true') { const cost = Math.max(0, Number(form.elements.rate.value || 0)); form.elements.buffer.value = cost ? (Math.round(cost * 8) / 100).toFixed(2) : ''; } syncProductRoundedPrice(); }
-function openProductDialog(product) { if (!assertAccess()) return; editingProduct = product?.id || null; const form = $('#productForm'); form.reset(); form.dataset.draftProductId = product?.id || `product-${uuid()}`; form.dataset.bufferManuallyEdited = product ? 'true' : 'false'; $('#eventTagChoices').innerHTML = tableOccasions().map(tag => `<label><input type="checkbox" name="events" value="${tag}"${(product?.events || []).includes(tag) ? ' checked' : ''}>${tagLabel(tag)}</label>`).join(''); $('#dialogLabel').textContent = product ? 'EDIT PRODUCT' : 'NEW PRODUCT'; $('#dialogTitle').textContent = product ? 'Edit product' : 'Add a product'; if (product) { form.elements.name.value = product.name; form.elements.rate.value = product.baseCost || ''; form.elements.buffer.value = product.buffer || 0; form.elements.supplier.value = product.supplier || ''; form.elements.reorderLevel.value = product.reorderLevel || 0; form.elements.leadTimeDays.value = product.leadTimeDays || 0; } syncProductRoundedPrice(); $('#productDialog').showModal(); }
+function openProductDialog(product) { if (!assertAccess()) return; editingProduct = product?.id || null; const form = $('#productForm'); form.reset(); form.dataset.draftProductId = product?.id || `product-${uuid()}`; form.dataset.bufferManuallyEdited = product ? 'true' : 'false'; $('#eventTagChoices').innerHTML = tableOccasions().map(tag => `<label><input type="checkbox" name="events" value="${tag}"${(product?.events || []).includes(tag) ? ' checked' : ''}>${tagLabel(tag)}</label>`).join(''); $('#dialogLabel').textContent = product ? 'EDIT PRODUCT' : 'NEW PRODUCT'; $('#dialogTitle').textContent = product ? 'Edit product' : 'Add a product'; if (product) { form.elements.name.value = product.name; form.elements.rate.value = product.baseCost || ''; form.elements.buffer.value = product.buffer || 0; form.elements.supplier.value = product.supplier || ''; form.elements.catalogueRole.value = product.catalogueRole || ''; form.elements.collectionTags.value = (product.collectionTags || []).join(', '); form.elements.reorderLevel.value = product.reorderLevel || 0; form.elements.leadTimeDays.value = product.leadTimeDays || 0; } syncProductRoundedPrice(); $('#productDialog').showModal(); }
 const preparedUploads = new WeakMap();
 async function uploadImage(file) {
   let draft = preparedUploads.get(file);
@@ -425,6 +431,7 @@ async function uploadImage(file) {
 }
 async function saveProduct(form) {
   if (!assertAccess() || productSaveInFlight) return;
+  const productTags = ProductCatalogue.tags(form.elements.collectionTags.value);
   const existing = products.find(product => product.id === editingProduct);
   const events = [...form.querySelectorAll('[name="events"]:checked')].map(input => input.value);
   if (!events.length) throw new Error('Select at least one suitable occasion before saving the product.');
@@ -440,7 +447,7 @@ async function saveProduct(form) {
       if (imageFile) image = await uploadImage(imageFile);
       const productCost = Math.max(0, Number(form.elements.rate.value || 0));
       const buffer = Math.max(0, Number(form.elements.buffer.value || 0));
-      const payload = { id, owner_id: user.id, kind: 'product', name: form.elements.name.value.trim(), cost: productCost, buffer, occasions: events, photo: image, contents: '', component_ids: [], sku: existing?.sku || id, supplier_name: form.elements.supplier.value.trim(), reorder_level: Math.max(0, Number(form.elements.reorderLevel.value || 0)), lead_time_days: Math.max(0, Number(form.elements.leadTimeDays.value || 0)) };
+      const payload = { id, owner_id: user.id, kind: 'product', name: form.elements.name.value.trim(), cost: productCost, buffer, occasions: events, photo: image, contents: '', component_ids: [], sku: existing?.sku || id, supplier_name: form.elements.supplier.value.trim(), catalogue_role: form.elements.catalogueRole.value, collection_tags: productTags, reorder_level: Math.max(0, Number(form.elements.reorderLevel.value || 0)), lead_time_days: Math.max(0, Number(form.elements.leadTimeDays.value || 0)) };
       const { error } = await db.from('library_items').upsert(payload);
       if (error) throw error;
       if (payload.supplier_name) {
@@ -467,7 +474,7 @@ function renderCatalogueChoices() { const occasion = $('#catalogueOccasion').val
 function comboProducts(combo) { return combo.productIds.map(id => products.find(product => product.id === id)).filter(Boolean); }
 function comboNeedsProductPage(combo) { return comboProducts(combo).length > COMBO_COLLAGE_PRODUCTS; }
 function catalogueProductStrip(items, showAll = false) { const displayed = showAll ? items : items.slice(0, COMBO_COLLAGE_PRODUCTS); const remaining = Math.max(0, items.length - displayed.length); return `<div class="catalogue-product-strip product-count-${displayed.length}">${displayed.map((product, index) => `${index ? '<i aria-hidden="true">+</i>' : ''}<figure>${imageMarkup(product, 'catalogue-product-image')}</figure>`).join('')}${remaining ? `<figure class="catalogue-product-more" aria-label="${remaining} more products"><b>+${remaining}</b><span>MORE</span></figure>` : ''}</div>`; }
-function catalogueSheetCard(combo, index = 0, expandedProducts = false) { const items = comboProducts(combo); return `<article class="catalogue-sheet-card${expandedProducts ? ' expanded-products' : ''}"><span class="catalogue-combo-number" aria-label="Combo ${index + 1}">${index + 1}</span><div class="catalogue-sheet-images">${catalogueProductStrip(items, expandedProducts)}</div><div class="catalogue-sheet-copy"><p>${escapeHtml(tagLabel(normalizeTag(combo.occasion)))}</p><h2>${escapeHtml(combo.name)}</h2><strong>${money(liveComboRate(combo))} <small>PER COMBO</small></strong><span>INCLUSIONS</span><ul class="${items.length > COMBO_COLLAGE_PRODUCTS ? 'many-inclusions' : ''}">${items.map(product => `<li>${escapeHtml(product.name)}</li>`).join('')}</ul></div></article>`; }
+function catalogueSheetCard(combo, index = 0, expandedProducts = false) { const items = comboProducts(combo); return `<article class="catalogue-sheet-card${expandedProducts ? ' expanded-products' : ''}"><span class="catalogue-combo-number" aria-label="Combo ${index + 1}">${index + 1}</span><div class="catalogue-sheet-images" style="--gallery-columns:${catalogueGalleryLayout(items.length).columns};--gallery-tile:${catalogueGalleryLayout(items.length).tileSize}mm">${catalogueProductStrip(items, expandedProducts)}</div><div class="catalogue-sheet-copy"><p>${escapeHtml(tagLabel(normalizeTag(combo.occasion)))}</p><h2>${escapeHtml(combo.name)}</h2><strong>${money(liveComboRate(combo))} <small>PER COMBO</small></strong><span>INCLUSIONS</span><ul class="${items.length > COMBO_COLLAGE_PRODUCTS ? 'many-inclusions' : ''}">${items.map(product => `<li>${escapeHtml(product.name)}</li>`).join('')}</ul></div></article>`; }
 function catalogueWelcome() { const clientName = $('#catalogueClientName').value.trim(); return `Thank you${clientName ? `, ${clientName}` : ''}, for considering Meraki & Mirth. We would be truly delighted to add a little more joy to your celebration. We have curated these packages especially for you, with every detail chosen to make the moment feel even more special.`; }
 function catalogueTelegramMessage(chosen, heading) { const clientName = $('#catalogueClientName').value.trim(); return `Meraki & Mirth — Catalogue shared\n\nClient: ${clientName || 'General catalogue'}\nCollection: ${heading}\nCombos included (${chosen.length}): ${chosen.map(combo => combo.name).join(' · ')}\nPrepared by: ${user?.email || 'Meraki & Mirth team'}`; }
 async function dispatchTelegramNotifications() { if (!db || config?.disableNotifications) return; try { const { error } = await db.functions.invoke('telegram-notifications'); if (error) console.warn('Telegram notifications are queued and will retry shortly.', error.message); } catch (error) { console.warn('Telegram notifications are queued and will retry shortly.', error); } }
@@ -562,7 +569,7 @@ async function pdfTileData(product) {
       image.onload = () => {
         try {
           const canvas = document.createElement('canvas');
-          const size = 420, radius = 34;
+          const size = Math.min(720, Math.max(image.naturalWidth, image.naturalHeight)), radius = size * .08;
           canvas.width = size; canvas.height = size;
           const context = canvas.getContext('2d');
           // Leave the corners transparent. The PDF tile beneath supplies the
@@ -602,79 +609,35 @@ async function drawPdfProductGallery(doc, items, { centerX = 105, top, columns, 
     const x = centerX - rowWidth / 2 + (index - rowStart) * (tileSize + gap);
     const y = top + row * (tileSize + gap);
     await pdfProductImage(doc, items[index], x, y, tileSize, tileSize);
-    if (index + 1 < rowStart + itemsInRow) pdfCenteredText(doc, '+', x + tileSize + gap / 2, y + tileSize / 2 + .5, { font: 'times', size: Math.max(11, tileSize * .65), color: pdfPalette.gold });
   }
   return rows * tileSize + Math.max(0, rows - 1) * gap;
 }
 async function shareNativePdf(doc, filename, title) { const filesystem = window.Capacitor?.Plugins?.Filesystem; const share = window.Capacitor?.Plugins?.Share; if (!filesystem || !share) throw new Error('PDF sharing is not available in this app build. Please update the Android app and try again.'); const data = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1]); reader.onerror = reject; reader.readAsDataURL(doc.output('blob')); }); const file = await filesystem.writeFile({ path: filename, data, directory: 'CACHE', recursive: true }); await share.share({ title, text: `${title} — Meraki & Mirth`, url: file.uri, dialogTitle: 'Save or share your PDF' }); }
-function cataloguePages(chosen) {
-  const pages = [];
-  let pairedPage = [];
-  for (const combo of chosen) {
-    if (comboNeedsProductPage(combo)) {
-      if (pairedPage.length) pages.push(pairedPage);
-      pairedPage = [];
-      pages.push([combo]);
-      continue;
-    }
-    pairedPage.push(combo);
-    if (pairedPage.length === 2) {
-      pages.push(pairedPage);
-      pairedPage = [];
-    }
-  }
-  if (pairedPage.length) pages.push(pairedPage);
-  return pages;
+function cataloguePages(chosen) { return chosen.map(combo => [combo]); }
+function catalogueGalleryLayout(count) {
+  const columns = count <= 2 ? Math.max(1, count) : count <= 9 ? 3 : 4;
+  const rows = Math.max(1, Math.ceil(count / columns));
+  const gap = 4;
+  const tileSize = Math.min(86, (164 - (columns - 1) * gap) / columns, (110 - (rows - 1) * gap) / rows);
+  return { columns, tileSize, gap };
 }
 async function drawNativeCataloguePage(doc, pageCombos, heading, totalCombos, pageNumber, pageCount, logo) {
-  pdfFrame(doc);
-  if (logo) doc.addImage(logo, 'JPEG', 14, 14, 24, 24, undefined, 'FAST');
-  pdfText(doc, 'MERAKI & MIRTH', 43, 18, 115, { style: 'bold', size: 8, color: pdfPalette.gold });
-  pdfText(doc, heading, 43, 27, 116, { font: 'times', style: 'bold', size: 19, color: pdfPalette.ink, line: 1.05 });
-  const firstPage = pageNumber === 1;
-  const message = firstPage ? catalogueWelcome() : `A closer look at the thoughtful sets curated especially for you. Page ${pageNumber} of ${pageCount}.`;
-  const introEnd = pdfText(doc, message, 14, 46, 182, { font: 'times', style: 'italic', size: 9.5, color: pdfPalette.muted, line: 1.28 });
-  doc.setFillColor(248, 237, 222);
-  doc.roundedRect(163, 15, 33, 10, 5, 5, 'F');
-  pdfCenteredText(doc, firstPage ? `${totalCombos} CURATED ${totalCombos === 1 ? 'COMBO' : 'COMBOS'}` : `PAGE ${pageNumber} OF ${pageCount}`, 179.5, 20.2, { style: 'bold', size: 6.2, color: pdfPalette.gold });
-  const x = 14;
-  const width = 182;
-  const gap = 6;
-  const y = Math.max(firstPage ? 69 : 62, introEnd + 7);
-  const startIndex = pageCombos._offset || 0;
-  const expandedPage = pageCombos.length === 1 && comboNeedsProductPage(pageCombos[0]);
-  const cardHeight = expandedPage ? 198 : pageCombos.length === 1 ? 119 : 94;
-  for (let index = 0; index < pageCombos.length; index += 1) {
-    const combo = pageCombos[index];
-    const items = comboProducts(combo);
-    const cardY = y + index * (cardHeight + gap);
-    doc.setFillColor(255, 255, 255);
-    doc.setDrawColor(...pdfPalette.line);
-    doc.roundedRect(x, cardY, width, cardHeight, 3, 3, 'FD');
-    // Match the browser export: the number sits deliberately half outside the
-    // card corner, instead of drifting inside the left whitespace.
-    doc.setFillColor(...pdfPalette.ink);
-    doc.setDrawColor(255, 249, 241);
-    doc.setLineWidth(.55);
-    doc.circle(x, cardY, 4.25, 'FD');
-    pdfCenteredText(doc, String(startIndex + index + 1), x, cardY + .1, { style: 'bold', size: 6.6, color: [255, 255, 255] });
-    const shownItems = expandedPage ? items : items.slice(0, COMBO_COLLAGE_PRODUCTS);
-    const imageRows = expandedPage ? 2 : 1;
-    const imageColumns = expandedPage ? Math.ceil(shownItems.length / imageRows) : shownItems.length;
-    const imageSize = expandedPage ? 25 : 20;
-    const imageGap = expandedPage ? 4 : 4;
-    const galleryHeight = await drawPdfProductGallery(doc, shownItems, { centerX: x + width / 2, top: cardY + 9, columns: imageColumns, tileSize: imageSize, gap: imageGap });
-    let textY = cardY + 14 + galleryHeight;
-    textY = pdfText(doc, tagLabel(normalizeTag(combo.occasion)).toUpperCase(), x + 7, textY, width - 14, { style: 'bold', size: 6.4, color: pdfPalette.gold });
-    textY = pdfText(doc, combo.name, x + 7, textY + 2, width - 14, { font: 'times', style: 'bold', size: expandedPage ? 16 : 13.5, color: pdfPalette.ink, line: 1.05 });
-    textY = pdfText(doc, `${pdfMoney(liveComboRate(combo))} per curated set`, x + 7, textY + 3, width - 14, { style: 'bold', size: 8.2, color: pdfPalette.ink });
-    pdfText(doc, 'INCLUSIONS', x + 7, textY + 5, width - 14, { style: 'bold', size: 6.2, color: pdfPalette.gold });
-    const listTop = textY + 10, columns = expandedPage ? 3 : 2, rows = Math.ceil(items.length / columns), columnWidth = (width - 17) / columns;
-    for (let column = 0; column < columns; column += 1) {
-      let listY = listTop;
-      for (const item of items.slice(column * rows, (column + 1) * rows)) listY = pdfText(doc, `- ${item.name}`, x + 8 + column * columnWidth, listY, columnWidth - 4, { size: expandedPage ? 6.9 : 6.4, color: pdfPalette.muted, line: 1.12 }) + .7;
-    }
-  }
+ const design=ProductCatalogue,combo=pageCombos[0],items=comboProducts(combo);
+ design.frame(doc,{title:'The Curated Edit',client:$('#catalogueClientName').value.trim(),page:pageNumber,pages:pageCount,logo});
+ design.text(doc,`${String(pageNumber).padStart(2,'0')}  /  ${tagLabel(normalizeTag(combo.occasion)).toUpperCase()}`,16,64,178,{size:8,style:'bold',color:design.palette.gold});
+ const titleEnd=design.text(doc,combo.name,16,76,178,{size:25,font:'times',maxLines:2});
+ const galleryTop=titleEnd+6,columns=items.length>6?3:2,rows=Math.ceil(items.length/columns),width=178/columns;
+ doc.setFont('helvetica','normal');doc.setFontSize(9);
+ const listHeight=Math.max(0,...Array.from({length:columns},(_,column)=>items.slice(column*rows,(column+1)*rows).reduce((height,item)=>height+doc.splitTextToSize(pdfSafeText(item.name),width-6).length*9*.3528*1.2+2,0)));
+ const detailTop=Math.min(galleryTop+114,271-26-listHeight);
+ const layout=catalogueGalleryLayout(items.length),galleryRows=Math.max(1,Math.ceil(items.length/layout.columns));
+ layout.tileSize=Math.min(layout.tileSize,(detailTop-galleryTop-6-(galleryRows-1)*layout.gap)/galleryRows);
+ if(layout.tileSize<20)throw Error('This combo has too much text for one page. Shorten its product names before exporting.');
+ await drawPdfProductGallery(doc,items,{centerX:105,top:galleryTop,...layout});
+ doc.setDrawColor(...design.palette.line);doc.line(16,detailTop,194,detailTop);
+ design.text(doc,`${pdfMoney(liveComboRate(combo))} per curated set`,16,detailTop+10,178,{size:15,font:'times'});
+ design.text(doc,'INCLUDED IN YOUR SET',16,detailTop+19,178,{size:7.5,style:'bold',color:design.palette.gold});
+ for(let column=0;column<columns;column++){let y=detailTop+26;for(const item of items.slice(column*rows,(column+1)*rows))y=design.text(doc,item.name,16+column*width,y,width-6,{size:9,maxLines:3,color:design.palette.muted})+2;}
 }
 async function exportCatalogueNative(chosen, heading, clientName = '', eventName = '') {
   const { jsPDF } = window.jspdf || {};
@@ -690,13 +653,13 @@ async function exportCatalogueNative(chosen, heading, clientName = '', eventName
     await drawNativeCataloguePage(doc, pages[index], heading, chosen.length, index + 1, pages.length, logo);
   }
   const filename = pdfExportFilename('Curated Catalogue', clientName, eventName || heading);
-  await shareNativePdf(doc, filename, filename.replace(/\.pdf$/i, ''));
+  if(isNativeApp())await shareNativePdf(doc,filename,filename.replace(/\.pdf$/i,''));else await saveExportBlob(doc.output('blob'),filename,'Curated catalogue');
 }
 function catalogueSheetPage(pageCombos, heading, totalCombos, pageIndex, pageCount, offset) {
   const firstPage = pageIndex === 0;
   const welcome = firstPage ? catalogueWelcome() : `A closer look at the thoughtful sets curated especially for you. Page ${pageIndex + 1} of ${pageCount}.`;
   const marker = firstPage ? `${totalCombos} curated ${totalCombos === 1 ? 'combo' : 'combos'}` : `Page ${pageIndex + 1} of ${pageCount}`;
-  const expandedProducts = pageCombos.length === 1 && comboNeedsProductPage(pageCombos[0]);
+  const expandedProducts = true;
   return `<section class="print-catalogue-sheet"><header><img src="assets/meraki-mirth-logo-original.png" alt="Meraki &amp; Mirth"><div><p>MERAKI &amp; MIRTH</p><h1>${escapeHtml(heading)}</h1><em class="catalogue-welcome">${escapeHtml(welcome)}</em></div><b>${marker}</b></header><div class="catalogue-sheet-grid page-count-${pageCombos.length}${expandedProducts ? ' expanded-products-page' : ''}">${pageCombos.map((combo, index) => catalogueSheetCard(combo, offset + index, expandedProducts)).join('')}</div><footer><span>✿</span> MERAKI &amp; MIRTH <em>For the moments worth thanking.</em></footer></section>`;
 }
 async function exportCatalogue() {
@@ -707,7 +670,7 @@ async function exportCatalogue() {
   const eventName = occasion === 'all_combos' ? 'All occasions' : tagLabel(normalizeTag(occasion));
   const heading = occasion === 'all_combos' ? 'Curated Catalogue' : (/combos?$/i.test(occasion) ? occasion : `${eventName} Combos`);
   const clientName = $('#catalogueClientName').value.trim();
-  if (isNativeApp()) {
+  {
     const button = $('#exportCatalogue');
     setExportPending(button, true, 'Preparing PDF…');
     try {
@@ -722,13 +685,31 @@ async function exportCatalogue() {
     }
     return;
   }
-  const pages = cataloguePages(chosen);
-  $('#printCatalogue').innerHTML = pages.map((pageCombos, pageIndex) => catalogueSheetPage(pageCombos, heading, chosen.length, pageIndex, pages.length, pages.slice(0, pageIndex).reduce((total, page) => total + page.length, 0))).join('');
-  // Temporarily paused while catalogue PDF testing is in progress.
-  // await queueTelegramNotification('catalogue_shared', catalogueTelegramMessage(chosen, heading));
-  printWithFilename(pdfExportFilename('Curated Catalogue', clientName, eventName));
 }
 
+function quotePricing(combo, margin) { const saved = typeof editingQuote !== 'undefined' && editingQuote; const sameCombo = saved && combo.id === saved.comboId; const cost = sameCombo ? saved.unitCost : comboCost(combo.productIds); return { cost, price: sameCombo && margin === saved.margin ? saved.price : Math.round(cost * (1 + margin / 100)) }; }
+function resetQuoteEdit() { editingQuote = null; $('#quoteEditNotice').hidden = true; $('#saveOrder').textContent = 'Save quotation & view tracking'; }
+async function editSavedQuote(id) {
+ if (savingQuote || !assertAccess()) return;
+ const epoch = dataEpoch;
+ const {data: row, error} = await db.from('orders').select('*').eq('id', id).single();
+ if (epoch !== dataEpoch || !accessGranted) return;
+ if (error) return notify(error.message);
+ if (!['Enquiry','Quotation sent','Follow-up'].includes(row.status)) return notify('Only quotes that are not yet confirmed can be edited.');
+ if (row.thank_you_card_unit_price || row.thank_you_card_design_fee || (row.thank_you_card_style && row.thank_you_card_style !== 'none')) return notify('This legacy quote contains card add-ons that this editor cannot change safely.');
+ const order = orderFromRow(row), primary = row.items?.[0] || {};
+ if (!combos.some(combo => combo.id === order.comboId)) return notify('The saved combo is no longer available. Restore it before editing this quote.');
+ editingQuote = { id, expected: row, comboId: order.comboId, margin: Number(primary.margin ?? 30), unitCost: Number(primary.unitCost ?? row.cost_snapshot / row.qty), price: Number(primary.pricePerCombo ?? (order.subtotalBeforeDiscount - order.additionalCosts.reduce((sum,c)=>sum+c.amount,0)) / order.quantity - order.netWrappingUnitPrice) };
+ $('#orderDetailDialog').close();
+ await navigate('quotes');
+ $('#quoteOccasion').value = 'all_combos'; renderQuotes(); $('#quoteCombo').value = order.comboId;
+ const fields = {quoteClientName:order.customerName,quoteClientMobile:order.customerPhone,quoteTitle:order.title,quoteQuantity:order.quantity,quoteDeliveryArea:order.deliveryArea,quoteSpecialRequest:order.specialRequest,quoteComplimentary:order.complimentary,quoteEventDate:order.eventDate,quoteDeliveryDate:order.deliveryDate,quoteNetWrapping:String(order.netWrapping),quoteNetWrappingPrice:order.netWrappingUnitPrice,quoteDiscountPercent:order.discountPercent,quoteDiscountType:order.discountType};
+ for (const [key,value] of Object.entries(fields)) $('#'+key).value = value;
+ const margin = $('#quoteMargin'); if (![...margin.options].some(option=>Number(option.value)===editingQuote.margin)) margin.add(new Option(editingQuote.margin+'%',String(editingQuote.margin))); margin.value = editingQuote.margin;
+ quoteAdditionalCosts = order.additionalCosts.map(cost=>({...cost,id:uuid()}));
+ $('#quoteEditNotice').hidden = false; $('#quoteEditLabel').textContent = 'Editing '+order.code+' — changes update this quotation. Download and resend the revised PDF after saving.'; $('#saveOrder').textContent = 'Save quote changes';
+ syncNetWrappingPrice(); renderQuoteAdditionalCosts(); renderQuotePreview();
+}
 function selectedQuoteCombo() { return combos.find(combo => combo.id === $('#quoteCombo').value); }
 function syncNetWrappingPrice() { const field = $('#quoteNetWrappingPriceField'), input = $('#quoteNetWrappingPrice'), grid = field?.parentElement; if (!field || !input) return; const enabled = $('#quoteNetWrapping').value === 'true'; field.hidden = !enabled; input.disabled = !enabled; if (!enabled) input.value = '0'; grid?.classList.toggle('has-net-wrapping-price', enabled); }
 function quoteAdditionalCostValues() { return quoteAdditionalCosts.map(item => ({ id: item.id, label: String(item.label || '').trim() || 'Additional cost', amount: Math.max(0, Number(item.amount || 0)) })).filter(item => item.amount > 0); }
@@ -736,14 +717,15 @@ function renderQuoteAdditionalCosts() { const holder = $('#quoteAdditionalCosts'
 function addQuoteAdditionalCost() { quoteAdditionalCosts.push({ id: uuid(), label: '', amount: '' }); renderQuoteAdditionalCosts(); $('#quoteAdditionalCosts [data-additional-cost-label]:last-of-type')?.focus(); }
 function renderQuotes() { syncOccasionLists(); renderQuoteAdditionalCosts(); const select = $('#quoteCombo'), prior = select.value, occasion = $('#quoteOccasion').value || 'all_combos'; const visible = occasion === 'all_combos' ? combos : combos.filter(combo => normalizeTag(combo.occasion) === occasion); select.innerHTML = visible.map(combo => `<option value="${combo.id}">${escapeHtml(combo.name)} · ${escapeHtml(tagLabel(normalizeTag(combo.occasion)))}</option>`).join('') || '<option value="">No saved combos for this occasion</option>'; select.value = visible.some(combo => combo.id === prior) ? prior : visible[0]?.id || ''; renderQuotePreview(); }
 function quoteDefaultTitle(combo, clientName) { const person = clientName.trim(); const possessive = person ? `${person}${/s$/i.test(person) ? '’' : '’s'}` : 'Your'; return `${possessive} ${tagLabel(normalizeTag(combo.occasion))} celebration`; }
-function quoteValues() { const combo = selectedQuoteCombo(), quantity = Math.max(1, Number($('#quoteQuantity').value || 1)), margin = Number($('#quoteMargin').value || 30), clientName = $('#quoteClientName').value.trim(), clientMobile = $('#quoteClientMobile').value.replace(/\D/g, ''), deliveryArea = $('#quoteDeliveryArea').value.trim(), specialRequest = $('#quoteSpecialRequest').value.trim(), complimentary = $('#quoteComplimentary').value.trim(), eventDate = $('#quoteEventDate').value, deliveryDate = $('#quoteDeliveryDate').value, netWrapping = $('#quoteNetWrapping').value === 'true', netWrappingUnitPrice = netWrapping ? Math.max(0, Number($('#quoteNetWrappingPrice').value || 0)) : 0, additionalCosts = quoteAdditionalCostValues(), discountPercent = Math.min(100, Math.max(0, Number($('#quoteDiscountPercent').value || 0))); const netWrappingTotal = netWrappingUnitPrice * quantity, additionalCostTotal = additionalCosts.reduce((total, item) => total + item.amount, 0); if (!combo) return { quantity, margin, combo: null, cost: 0, price: 0, baseTotal: 0, netWrappingUnitPrice, netWrappingTotal, additionalCosts, additionalCostTotal, subtotal: 0, discountPercent, discountAmount: 0, total: 0, clientName, clientMobile, deliveryArea, specialRequest, complimentary, eventDate, deliveryDate, netWrapping, title: '' }; const cost = comboCost(combo.productIds), price = Math.round(cost * (1 + margin / 100)), baseTotal = price * quantity, subtotal = baseTotal + netWrappingTotal + additionalCostTotal, discountAmount = Math.round(subtotal * discountPercent) / 100, total = Math.max(0, subtotal - discountAmount); return { combo, quantity, margin, cost, price, baseTotal, netWrappingUnitPrice, netWrappingTotal, additionalCosts, additionalCostTotal, subtotal, discountPercent, discountAmount, total, clientName, clientMobile, deliveryArea, specialRequest, complimentary, eventDate, deliveryDate, netWrapping, title: $('#quoteTitle').value.trim() || quoteDefaultTitle(combo, clientName) }; }
+function quoteValues() { const combo = selectedQuoteCombo(), quantity = Math.max(1, Number($('#quoteQuantity').value || 1)), margin = Number($('#quoteMargin').value || 0), clientName = $('#quoteClientName').value.trim(), clientMobile = $('#quoteClientMobile').value.replace(/\D/g, ''), deliveryArea = $('#quoteDeliveryArea').value.trim(), specialRequest = $('#quoteSpecialRequest').value.trim(), complimentary = $('#quoteComplimentary').value.trim(), eventDate = $('#quoteEventDate').value, deliveryDate = $('#quoteDeliveryDate').value, netWrapping = $('#quoteNetWrapping').value === 'true', netWrappingUnitPrice = netWrapping ? Math.max(0, Number($('#quoteNetWrappingPrice').value || 0)) : 0, additionalCosts = quoteAdditionalCostValues(), discountType = $('#quoteDiscountType').value.trim().slice(0, 60), discountPercent = Math.min(100, Math.max(0, Number($('#quoteDiscountPercent').value || 0))); const netWrappingTotal = netWrappingUnitPrice * quantity, additionalCostTotal = additionalCosts.reduce((total, item) => total + item.amount, 0); if (!combo) return { quantity, margin, combo: null, cost: 0, price: 0, baseTotal: 0, netWrappingUnitPrice, netWrappingTotal, additionalCosts, additionalCostTotal, subtotal: 0, discountType, discountPercent, discountAmount: 0, total: 0, clientName, clientMobile, deliveryArea, specialRequest, complimentary, eventDate, deliveryDate, netWrapping, title: '' }; const { cost, price } = quotePricing(combo, margin), baseTotal = price * quantity, subtotal = baseTotal + netWrappingTotal + additionalCostTotal, discountAmount = Math.round(subtotal * discountPercent) / 100, total = Math.max(0, subtotal - discountAmount); return { combo, quantity, margin, cost, price, baseTotal, netWrappingUnitPrice, netWrappingTotal, additionalCosts, additionalCostTotal, subtotal, discountType, discountPercent, discountAmount, total, clientName, clientMobile, deliveryArea, specialRequest, complimentary, eventDate, deliveryDate, netWrapping, title: $('#quoteTitle').value.trim() || quoteDefaultTitle(combo, clientName) }; }
 function quoteThankYou(quote) { return `Thank you${quote.clientName ? `, ${quote.clientName}` : ''}, for considering Meraki & Mirth to be a part of your celebration. We are just as excited to make this moment feel special.`; }
 function quoteSetItems(quote) { return quote.combo ? quote.combo.productIds.map(id => products.find(product => product.id === id)).filter(Boolean) : []; }
 function quoteClientInclusions(quote) { const inclusions = quoteSetItems(quote).map(product => product.name); if (quote.netWrapping) inclusions.push('Net wrapping'); return inclusions; }
 function formattedDate(value) { return value ? new Date(`${value}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''; }
 function quoteDeliveryDetails(quote) { return [quote.deliveryDate ? `Delivery date: ${formattedDate(quote.deliveryDate)}` : '', quote.deliveryArea ? `Delivery area: ${quote.deliveryArea}` : ''].filter(Boolean); }
-function renderQuotePreview() { const quote = quoteValues(), inclusions = quoteClientInclusions(quote), deliveryDetails = quoteDeliveryDetails(quote); $('#quotePreview').innerHTML = quote.combo ? `<p class="section-label">YOUR CELEBRATION QUOTE</p><h3>${escapeHtml(quote.title)}</h3><p class="quote-warm-note">${escapeHtml(quoteThankYou(quote))}</p><div class="quote-line"><span>Handpicked curated set</span><b>${escapeHtml(quote.combo.name)}</b></div><div class="quote-line"><span>Price per curated set</span><b>${money(quote.price)}</b></div><details class="quote-set-contents"><summary><span>What’s inside this curated set</span><span>View products</span></summary><ul>${inclusions.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></details><div class="quote-line"><span>Curated sets</span><b>${quote.quantity}</b></div>${quote.eventDate ? `<div class="quote-line"><span>Event date</span><b>${escapeHtml(formattedDate(quote.eventDate))}</b></div>` : ''}${deliveryDetails.length ? `<div class="quote-line"><span>Delivery details</span><b>${escapeHtml(deliveryDetails.join(' · '))}</b></div>` : ''}${quote.discountAmount ? `<div class="quote-line discount"><span>${quote.discountPercent}% discount</span><b>− ${money(quote.discountAmount)}</b></div>` : ''}<div class="quote-line total"><span>Your celebration total</span><b>${money(quote.total)}</b></div>${quote.complimentary ? `<div class="quote-note"><span>Complimentary touches</span><p>${escapeHtml(quote.complimentary)}</p></div>` : ''}${quote.specialRequest ? `<div class="quote-request"><span>A little note from you</span><p>${escapeHtml(quote.specialRequest)}</p></div>` : ''}<p class="quote-signoff">With warmth,<br><b>Meraki &amp; Mirth</b><br><em>For the moments worth thanking.</em></p>` : '<p class="muted">Create a combo in Studio to prepare a quote.</p>'; }
-function quoteWhatsappText(quote) { const inclusionList = quoteClientInclusions(quote).map(item => `• ${item}`).join('\n'), deliveryDetails = quoteDeliveryDetails(quote); return `✨ *${quote.title}* ✨\n\n${quoteThankYou(quote)}\n\n*Your thoughtfully curated set*\n${quote.combo.name}\n\n*What’s inside your curated set*\n${inclusionList}\n\n*Your quote at a glance*\n• ₹${quote.price.toLocaleString('en-IN')} per curated set\n• ${quote.quantity} curated sets${quote.eventDate ? `\n• *Event date: ${formattedDate(quote.eventDate)}*` : ''}${deliveryDetails.length ? `\n\n*Delivery details*\n${deliveryDetails.map(item => `• ${item}`).join('\n')}` : ''}${quote.discountAmount ? `\n• ${quote.discountPercent}% discount: −₹${quote.discountAmount.toLocaleString('en-IN')}` : ''}\n• *Celebration total: ₹${quote.total.toLocaleString('en-IN')}*${quote.complimentary ? `\n\n*Complimentary touches*\n${quote.complimentary}` : ''}${quote.specialRequest ? `\n\n*Your special request*\n${quote.specialRequest}` : ''}\n\nWe cannot wait to add a little more joy to your celebration. 🌼\n\nWith warmth,\n*Meraki & Mirth*\n_For the moments worth thanking._`; }
+function quoteDiscountLabel(quote) { const type = String(quote.discountType || '').trim().slice(0, 60); return `${quote.discountPercent}% ${type ? `${type} ` : ''}discount`; }
+function renderQuotePreview() { const quote = quoteValues(), inclusions = quoteClientInclusions(quote), deliveryDetails = quoteDeliveryDetails(quote); $('#quotePreview').innerHTML = quote.combo ? `<p class="section-label">YOUR CELEBRATION QUOTE</p><h3>${escapeHtml(quote.title)}</h3><p class="quote-warm-note">${escapeHtml(quoteThankYou(quote))}</p><div class="quote-line"><span>Handpicked curated set</span><b>${escapeHtml(quote.combo.name)}</b></div><div class="quote-line"><span>Price per curated set</span><b>${money(quote.price)}</b></div><details class="quote-set-contents"><summary><span>What’s inside this curated set</span><span>View products</span></summary><ul>${inclusions.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></details><div class="quote-line"><span>Curated sets</span><b>${quote.quantity}</b></div>${quote.eventDate ? `<div class="quote-line"><span>Event date</span><b>${escapeHtml(formattedDate(quote.eventDate))}</b></div>` : ''}${deliveryDetails.length ? `<div class="quote-line"><span>Delivery details</span><b>${escapeHtml(deliveryDetails.join(' · '))}</b></div>` : ''}${quote.discountAmount ? `<div class="quote-line discount"><span>${escapeHtml(quoteDiscountLabel(quote))}</span><b>− ${money(quote.discountAmount)}</b></div>` : ''}<div class="quote-line total"><span>Your celebration total</span><b>${money(quote.total)}</b></div>${quote.complimentary ? `<div class="quote-note"><span>Complimentary touches</span><p>${escapeHtml(quote.complimentary)}</p></div>` : ''}${quote.specialRequest ? `<div class="quote-request"><span>A little note from you</span><p>${escapeHtml(quote.specialRequest)}</p></div>` : ''}<p class="quote-signoff">With warmth,<br><b>Meraki &amp; Mirth</b><br><em>For the moments worth thanking.</em></p>` : '<p class="muted">Create a combo in Studio to prepare a quote.</p>'; }
+function quoteWhatsappText(quote) { const inclusionList = quoteClientInclusions(quote).map(item => `• ${item}`).join('\n'), deliveryDetails = quoteDeliveryDetails(quote); return `✨ *${quote.title}* ✨\n\n${quoteThankYou(quote)}\n\n*Your thoughtfully curated set*\n${quote.combo.name}\n\n*What’s inside your curated set*\n${inclusionList}\n\n*Your quote at a glance*\n• ₹${quote.price.toLocaleString('en-IN')} per curated set\n• ${quote.quantity} curated sets${quote.eventDate ? `\n• *Event date: ${formattedDate(quote.eventDate)}*` : ''}${deliveryDetails.length ? `\n\n*Delivery details*\n${deliveryDetails.map(item => `• ${item}`).join('\n')}` : ''}${quote.discountAmount ? `\n• ${quoteDiscountLabel(quote)}: −₹${quote.discountAmount.toLocaleString('en-IN')}` : ''}\n• *Celebration total: ₹${quote.total.toLocaleString('en-IN')}*${quote.complimentary ? `\n\n*Complimentary touches*\n${quote.complimentary}` : ''}${quote.specialRequest ? `\n\n*Your special request*\n${quote.specialRequest}` : ''}\n\nWe cannot wait to add a little more joy to your celebration. 🌼\n\nWith warmth,\n*Meraki & Mirth*\n_For the moments worth thanking._`; }
 function copyQuote() { const quote = quoteValues(); if (!quote.combo) return; navigator.clipboard?.writeText(quoteWhatsappText(quote)); $('#copyQuote').textContent = 'WhatsApp message copied'; setTimeout(() => $('#copyQuote').textContent = 'Copy WhatsApp message', 1800); }
 async function exportQuoteNative(quote) { return exportQuoteNativeEnhanced(quote); }
 async function exportQuote() {
@@ -761,7 +743,7 @@ async function exportQuote() {
   const productStrip = items.map((product, index) => `${index ? '<i aria-hidden="true">+</i>' : ''}<figure>${imageMarkup(product, 'print-quote-product-image')}</figure>`).join('');
   const eventDetails = quote.eventDate ? `Event date: ${formattedDate(quote.eventDate)}` : '', deliveryDetails = quoteDeliveryDetails(quote).join(' · ');
   const fulfilmentNote = 'Home pickup is always welcome. If you prefer delivery, we will gladly arrange it; Porter charges apply at actuals.';
-  $('#printCatalogue').innerHTML = `<section class="print-catalogue-sheet print-quote-sheet"><header><img src="assets/meraki-mirth-logo-original.png" alt="Meraki &amp; Mirth"><div><p>YOUR CELEBRATION QUOTE</p><h1>${escapeHtml(quote.title)}</h1><span>Prepared with warmth by Meraki &amp; Mirth</span></div></header><div class="print-quote-body"><div class="print-quote-message"><p>${escapeHtml(quoteThankYou(quote))}</p><strong>${escapeHtml(quote.combo.name)}</strong><span>${escapeHtml(tagLabel(normalizeTag(quote.combo.occasion)))}</span>${eventDetails ? `<aside><b>Celebration schedule</b><p>${escapeHtml(eventDetails)}</p></aside>` : ''}${deliveryDetails ? `<aside><b>Delivery details</b><p>${escapeHtml(deliveryDetails)}</p></aside>` : ''}${quote.complimentary || quote.specialRequest ? `<aside><b>Thoughtful details</b><p>${quote.complimentary ? `${escapeHtml(quote.complimentary)} ` : ''}${quote.specialRequest ? `Client request: ${escapeHtml(quote.specialRequest)}` : ''}</p></aside>` : ''}</div><section class="print-quote-products${items.length > COMBO_COLLAGE_PRODUCTS ? ' expanded-products' : ''}"><span>YOUR THOUGHTFULLY CURATED SET</span><div>${productStrip}</div></section><section class="print-quote-inclusions"><span>WHAT’S INSIDE YOUR CURATED SET</span><ul class="${inclusions.length > COMBO_COLLAGE_PRODUCTS ? 'many-inclusions' : ''}">${inclusions.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></section><div class="print-quote-total"><span>Price per curated set</span><b>${money(quote.price)}</b><span>Curated sets</span><b>${quote.quantity}</b>${quote.discountAmount ? `<span>${quote.discountPercent}% discount</span><b>− ${money(quote.discountAmount)}</b>` : ''}<strong>Celebration total <b>${money(quote.total)}</b></strong></div><p class="print-quote-fulfilment"><b>Collection &amp; delivery</b>${escapeHtml(fulfilmentNote)}</p></div><footer><span>✿</span> MERAKI &amp; MIRTH <em>For the moments worth thanking.</em></footer></section>`;
+  $('#printCatalogue').innerHTML = `<section class="print-catalogue-sheet print-quote-sheet"><header><img src="assets/meraki-mirth-logo-original.png" alt="Meraki &amp; Mirth"><div><p>YOUR CELEBRATION QUOTE</p><h1>${escapeHtml(quote.title)}</h1><span>Prepared with warmth by Meraki &amp; Mirth</span></div></header><div class="print-quote-body"><div class="print-quote-message"><p>${escapeHtml(quoteThankYou(quote))}</p><strong>${escapeHtml(quote.combo.name)}</strong><span>${escapeHtml(tagLabel(normalizeTag(quote.combo.occasion)))}</span>${eventDetails ? `<aside><b>Celebration schedule</b><p>${escapeHtml(eventDetails)}</p></aside>` : ''}${deliveryDetails ? `<aside><b>Delivery details</b><p>${escapeHtml(deliveryDetails)}</p></aside>` : ''}${quote.complimentary || quote.specialRequest ? `<aside><b>Thoughtful details</b><p>${quote.complimentary ? `${escapeHtml(quote.complimentary)} ` : ''}${quote.specialRequest ? `Client request: ${escapeHtml(quote.specialRequest)}` : ''}</p></aside>` : ''}</div><section class="print-quote-products${items.length > COMBO_COLLAGE_PRODUCTS ? ' expanded-products' : ''}"><span>YOUR THOUGHTFULLY CURATED SET</span><div>${productStrip}</div></section><section class="print-quote-inclusions"><span>WHAT’S INSIDE YOUR CURATED SET</span><ul class="${inclusions.length > COMBO_COLLAGE_PRODUCTS ? 'many-inclusions' : ''}">${inclusions.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></section><div class="print-quote-total"><span>Price per curated set</span><b>${money(quote.price)}</b><span>Curated sets</span><b>${quote.quantity}</b>${quote.discountAmount ? `<span>${escapeHtml(quoteDiscountLabel(quote))}</span><b>− ${money(quote.discountAmount)}</b>` : ''}<strong>Celebration total <b>${money(quote.total)}</b></strong></div><p class="print-quote-fulfilment"><b>Collection &amp; delivery</b>${escapeHtml(fulfilmentNote)}</p></div><footer><span>✿</span> MERAKI &amp; MIRTH <em>For the moments worth thanking.</em></footer></section>`;
   printWithFilename(pdfExportFilename('Quote', quote.clientName, quote.title));
 }
 const pendingBusinessWrites = new Map();
@@ -791,16 +773,18 @@ async function refreshAfterCommit(groups) {
   try { await hydrateFromSupabase(groups); }
   catch (error) { notify(`Saved successfully, but the screen could not refresh: ${error.message}. Reload to see the saved result.`); }
 }
-async function saveOrder() { if (!assertAccess()) return; const quote = quoteValues(); if (!quote.combo) return notify('Choose a saved combo before saving a quotation.'); if (!quote.clientName) return notify('Add the client name before saving this quotation.'); if (!/^\d{7,15}$/.test(quote.clientMobile)) return notify('Add a valid client mobile number before saving this quotation.'); try {
+async function saveOrder() { if (savingQuote || !assertAccess()) return; const quote = quoteValues(); if (!quote.combo) return notify('Choose a saved combo before saving a quotation.'); if (!quote.clientName) return notify('Add the client name before saving this quotation.'); if (!/^\d{7,15}$/.test(quote.clientMobile)) return notify('Add a valid client mobile number before saving this quotation.'); savingQuote = true; $('#saveOrder').disabled = true; $('#cancelQuoteEdit').disabled = true; try {
  const client = { name: quote.clientName, mobile_number: quote.clientMobile, delivery_area: quote.deliveryArea };
- const order = { combo_id: quote.combo.id, title: quote.title, event: quote.combo.occasion, qty: quote.quantity, total: quote.total, status: 'Quotation sent', customer_name: quote.clientName, customer_phone: quote.clientMobile, delivery_area: quote.deliveryArea, special_request: quote.specialRequest, complimentary: quote.complimentary, event_date: quote.eventDate || null, delivery_date: quote.deliveryDate || null, net_wrapping: quote.netWrapping, net_wrapping_unit_price: quote.netWrappingUnitPrice, additional_costs: quote.additionalCosts, discount_percent: quote.discountPercent, discount_amount: quote.discountAmount, subtotal_before_discount: quote.subtotal, cost_snapshot: quote.cost * quote.quantity, items: [{ comboId: quote.combo.id, comboName: quote.combo.name, margin: quote.margin, pricePerCombo: quote.price, unitCost: quote.cost, clientMobile: quote.clientMobile, deliveryArea: quote.deliveryArea, eventDate: quote.eventDate, deliveryDate: quote.deliveryDate, netWrapping: quote.netWrapping, netWrappingUnitPrice: quote.netWrappingUnitPrice, netWrappingTotal: quote.netWrappingTotal, additionalCosts: quote.additionalCosts, additionalCostTotal: quote.additionalCostTotal, complimentary: quote.complimentary, discountPercent: quote.discountPercent, discountAmount: quote.discountAmount, subtotalBeforeDiscount: quote.subtotal }] };
- const data = await writeOnce('quotation', { client, order }, operation => db.rpc('save_quotation_once', { p_operation: operation, p_client: client, p_order: order }));
+ const order = { combo_id: quote.combo.id, title: quote.title, event: quote.combo.occasion, qty: quote.quantity, total: quote.total, status: 'Quotation sent', customer_name: quote.clientName, customer_phone: quote.clientMobile, delivery_area: quote.deliveryArea, special_request: quote.specialRequest, complimentary: quote.complimentary, event_date: quote.eventDate || null, delivery_date: quote.deliveryDate || null, net_wrapping: quote.netWrapping, net_wrapping_unit_price: quote.netWrappingUnitPrice, additional_costs: quote.additionalCosts, discount_percent: quote.discountPercent, discount_amount: quote.discountAmount, subtotal_before_discount: quote.subtotal, cost_snapshot: quote.cost * quote.quantity, items: [{ comboId: quote.combo.id, comboName: quote.combo.name, margin: quote.margin, pricePerCombo: quote.price, unitCost: quote.cost, clientMobile: quote.clientMobile, deliveryArea: quote.deliveryArea, eventDate: quote.eventDate, deliveryDate: quote.deliveryDate, netWrapping: quote.netWrapping, netWrappingUnitPrice: quote.netWrappingUnitPrice, netWrappingTotal: quote.netWrappingTotal, additionalCosts: quote.additionalCosts, additionalCostTotal: quote.additionalCostTotal, complimentary: quote.complimentary, discountType: quote.discountType, discountPercent: quote.discountPercent, discountAmount: quote.discountAmount, subtotalBeforeDiscount: quote.subtotal }] };
+ const edit = editingQuote;
+ const data = edit ? await writeOnce('quotation-edit', { id: edit.id, expected: edit.expected, client, order }, operation => db.rpc('update_quotation_once', {p_operation:operation,p_id:edit.id,p_expected:edit.expected,p_client:client,p_order:order})) : await writeOnce('quotation', { client, order }, operation => db.rpc('save_quotation_once', { p_operation: operation, p_client: client, p_order: order }));
+ resetQuoteEdit();
  void dispatchTelegramNotifications();
  notify('Quotation saved in the celebration workboard.', 'success');
  await refreshAfterCommit(['orders','clients']);
  await navigate('orders');
  if (data?.id) await openOrderDetail(data.id);
- } catch (error) { notify(error.message); }
+ } catch (error) { notify(error.message); } finally { savingQuote = false; $('#saveOrder').disabled = false; $('#cancelQuoteEdit').disabled = false; }
 }
 
 async function exportQuoteNativeEnhanced(quote) {
@@ -857,7 +841,7 @@ async function exportQuoteNativeEnhanced(quote) {
   const detailLines = [
     ['Price per curated set', pdfMoney(quote.price)],
     ['Curated sets', String(quote.quantity)],
-    ...(quote.discountAmount ? [[`${quote.discountPercent}% discount`, `- ${pdfMoney(quote.discountAmount)}`]] : [])
+    ...(quote.discountAmount ? [[quoteDiscountLabel(quote), `- ${pdfMoney(quote.discountAmount)}`]] : [])
   ];
   doc.setFillColor(252, 245, 235); doc.roundedRect(14, detailTop, 182, 57, 3, 3, 'F');
   detailLines.forEach(([label, value], index) => { const lineY = detailTop + 10 + index * 10; pdfText(doc, label, 21, lineY, 78, { size: 8.8, color: pdfPalette.muted }); pdfText(doc, value, 91, lineY, 35, { style: 'bold', size: 11, color: pdfPalette.ink }); });
@@ -873,10 +857,10 @@ async function exportQuoteNativeEnhanced(quote) {
 function orderDateKey(order) { return String(order.createdAt || '').slice(0, 10); }
 function currentYearDateRange() { const now = new Date(); const today = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-'); return { from: `${now.getFullYear()}-01-01`, to: today }; }
 function filteredOrders() { return orders.filter(order => (!ordersFrom || orderDateKey(order) >= ordersFrom) && (!ordersTo || orderDateKey(order) <= ordersTo)); }
-function renderOrderDetail(order) { const stages = ['Quotation sent', 'Confirmed', 'Advance paid', 'Procurement', 'Packaging', 'Ready for dispatch', 'Delivered', 'Full amount paid']; const isException = ['Lost', 'Dropped'].includes(order.status); const currentIndex = isException ? -1 : Math.max(0, stages.indexOf(order.status)); const progress = `${stages.map((stage, index) => `<span class="${index <= currentIndex ? 'complete' : ''}">${escapeHtml(stage)}</span>`).join('')}${isException ? `<span class="exception">${escapeHtml(order.status)}</span>` : ''}`; const profitText = order.profitRealised ? money(order.profit) : 'Pending final payment'; const card = order.thankYouCardStyle === 'none' ? '' : `${order.thankYouCardStyle === 'customized' ? 'Customized' : 'General'} thank-you card${order.thankYouCardUnitPrice ? ` · ${money(order.thankYouCardUnitPrice)} each` : ''}${order.thankYouCardDesignFee ? ` + ${money(order.thankYouCardDesignFee)} design` : ''}`; const wrapping = order.netWrapping ? `Net wrapping${order.netWrappingUnitPrice ? ` · ${money(order.netWrappingUnitPrice)} per curated set · ${money(order.netWrappingUnitPrice * order.quantity)} total` : ' included'}` : ''; $('#orderDetail').innerHTML = `<p class="section-label">CELEBRATION DETAIL</p><h2>${escapeHtml(order.title)}</h2><p class="order-detail-client">${escapeHtml(order.customerName || 'Client name not added')}${order.customerPhone ? ` · ${escapeHtml(order.customerPhone)}` : ''} · ${escapeHtml(tagLabel(normalizeTag(order.occasion)))}</p><div class="order-progress">${progress}</div><div class="order-detail-grid"><div><span>Quotation</span><b>${escapeHtml(order.code)}</b></div><div><span>Current status</span><b>${escapeHtml(order.status)}</b></div><div><span>Quote total</span><b>${money(order.total)}</b></div><div><span>Realised profit</span><b>${profitText}</b></div><div><span>Event date</span><b>${order.eventDate ? escapeHtml(formattedDate(order.eventDate)) : 'Not set'}</b></div><div><span>Delivery date</span><b>${order.deliveryDate ? escapeHtml(formattedDate(order.deliveryDate)) : 'Not set'}</b></div>${order.deliveryArea ? `<div><span>Delivery area</span><b>${escapeHtml(order.deliveryArea)}</b></div>` : ''}</div><section class="order-detail-section"><span>Chosen combo</span><b>${escapeHtml(order.comboName)}</b><small>${order.quantity} curated sets · Quote sent ${order.quoteSentAt ? new Date(order.quoteSentAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : order.created}</small></section>${wrapping || card || order.discountAmount ? `<section class="order-detail-section"><span>Quote add-ons</span><ul class="quote-addons-list">${wrapping ? `<li>${escapeHtml(wrapping)}</li>` : ''}${card ? `<li>${escapeHtml(card)}</li>` : ''}${order.discountAmount ? `<li>${order.discountPercent}% discount · − ${money(order.discountAmount)}</li>` : ''}</ul></section>` : ''}${order.complimentary ? `<section class="order-detail-section special"><span>Complimentary touches</span><p>${escapeHtml(order.complimentary)}</p></section>` : ''}${order.specialRequest ? `<section class="order-detail-section special"><span>Client’s special request</span><p>${escapeHtml(order.specialRequest)}</p></section>` : ''}<div class="order-detail-fields"><label>Delivery date<input data-order-delivery-date="${order.id}" type="date" value="${escapeHtml(order.deliveryDate || '')}"></label><label>Update progress<select data-order-detail-status="${order.id}">${orderStatuses.map(status => `<option${status === order.status ? ' selected' : ''}>${status}</option>`).join('')}</select></label></div>`; const statusSelect = $('[data-order-detail-status]'); if (statusSelect) statusSelect.onchange = () => updateOrderStatus(order.id, statusSelect.value); const deliveryDateInput = $('[data-order-delivery-date]'); if (deliveryDateInput) deliveryDateInput.onchange = () => updateOrderDeliveryDate(order.id, deliveryDateInput.value); }
+function renderOrderDetail(order) { const stages = ['Quotation sent', 'Confirmed', 'Advance paid', 'Procurement', 'Packaging', 'Ready for dispatch', 'Delivered', 'Full amount paid']; const isException = ['Lost', 'Dropped'].includes(order.status); const currentIndex = isException ? -1 : Math.max(0, stages.indexOf(order.status)); const progress = `${stages.map((stage, index) => `<span class="${index <= currentIndex ? 'complete' : ''}">${escapeHtml(stage)}</span>`).join('')}${isException ? `<span class="exception">${escapeHtml(order.status)}</span>` : ''}`; const profitText = order.profitRealised ? money(order.profit) : 'Pending final payment'; const card = order.thankYouCardStyle === 'none' ? '' : `${order.thankYouCardStyle === 'customized' ? 'Customized' : 'General'} thank-you card${order.thankYouCardUnitPrice ? ` · ${money(order.thankYouCardUnitPrice)} each` : ''}${order.thankYouCardDesignFee ? ` + ${money(order.thankYouCardDesignFee)} design` : ''}`; const wrapping = order.netWrapping ? `Net wrapping${order.netWrappingUnitPrice ? ` · ${money(order.netWrappingUnitPrice)} per curated set · ${money(order.netWrappingUnitPrice * order.quantity)} total` : ' included'}` : ''; $('#orderDetail').innerHTML = `<p class="section-label">CELEBRATION DETAIL</p><h2>${escapeHtml(order.title)}</h2><p class="order-detail-client">${escapeHtml(order.customerName || 'Client name not added')}${order.customerPhone ? ` · ${escapeHtml(order.customerPhone)}` : ''} · ${escapeHtml(tagLabel(normalizeTag(order.occasion)))}</p><div class="order-progress">${progress}</div><div class="order-detail-grid"><div><span>Quotation</span><b>${escapeHtml(order.code)}</b></div><div><span>Current status</span><b>${escapeHtml(order.status)}</b></div><div><span>Quote total</span><b>${money(order.total)}</b></div><div><span>Realised profit</span><b>${profitText}</b></div><div><span>Event date</span><b>${order.eventDate ? escapeHtml(formattedDate(order.eventDate)) : 'Not set'}</b></div><div><span>Delivery date</span><b>${order.deliveryDate ? escapeHtml(formattedDate(order.deliveryDate)) : 'Not set'}</b></div>${order.deliveryArea ? `<div><span>Delivery area</span><b>${escapeHtml(order.deliveryArea)}</b></div>` : ''}</div><section class="order-detail-section"><span>Chosen combo</span><b>${escapeHtml(order.comboName)}</b><small>${order.quantity} curated sets · Quote sent ${order.quoteSentAt ? new Date(order.quoteSentAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : order.created}</small></section>${wrapping || card || order.discountAmount ? `<section class="order-detail-section"><span>Quote add-ons</span><ul class="quote-addons-list">${wrapping ? `<li>${escapeHtml(wrapping)}</li>` : ''}${card ? `<li>${escapeHtml(card)}</li>` : ''}${order.discountAmount ? `<li>${escapeHtml(quoteDiscountLabel(order))} · − ${money(order.discountAmount)}</li>` : ''}</ul></section>` : ''}${order.complimentary ? `<section class="order-detail-section special"><span>Complimentary touches</span><p>${escapeHtml(order.complimentary)}</p></section>` : ''}${order.specialRequest ? `<section class="order-detail-section special"><span>Client’s special request</span><p>${escapeHtml(order.specialRequest)}</p></section>` : ''}<div class="order-detail-fields"><label>Delivery date<input data-order-delivery-date="${order.id}" type="date" value="${escapeHtml(order.deliveryDate || '')}"></label><label>Update progress<select data-order-detail-status="${order.id}">${orderStatuses.map(status => `<option${status === order.status ? ' selected' : ''}>${status}</option>`).join('')}</select></label></div>`; const statusSelect = $('[data-order-detail-status]'); if (statusSelect) statusSelect.onchange = () => updateOrderStatus(order.id, statusSelect.value); const deliveryDateInput = $('[data-order-delivery-date]'); if (deliveryDateInput) deliveryDateInput.onchange = () => updateOrderDeliveryDate(order.id, deliveryDateInput.value); }
 const baseRenderOrderDetail = renderOrderDetail;
 function addOrderInternalCosts(order) { if (!order.additionalCosts?.length) return; const fields = $('#orderDetail .order-detail-fields'); if (!fields) return; const section = document.createElement('section'); section.className = 'order-detail-section'; section.innerHTML = `<span>Internal cost adjustments</span><small>Team-only — not shown in the client quote.</small><ul class="quote-addons-list">${order.additionalCosts.map(item => `<li>${escapeHtml(item.label)} · ${money(item.amount)}</li>`).join('')}</ul>`; fields.before(section); }
-renderOrderDetail = function renderOrderDetailWithComboLink(order) { baseRenderOrderDetail(order); addOrderComboLink(order); addOrderInternalCosts(order); };
+renderOrderDetail = function renderOrderDetailWithComboLink(order) { baseRenderOrderDetail(order); addOrderComboLink(order); addOrderInternalCosts(order); if (['Enquiry','Quotation sent','Follow-up'].includes(order.status)) { const button = document.createElement('button'); button.className = 'soft-btn'; button.textContent = 'Edit quotation'; button.onclick = () => editSavedQuote(order.id); $('#orderDetail').append(button); } };
 async function refreshOpenOrderDetail() {
   const id = openOrderId, epoch = dataEpoch, dialog = $('#orderDetailDialog');
   if (!id || !dialog.open) return;
@@ -905,7 +889,7 @@ function renderInventory() {
   const query = inventorySearch.trim().toLowerCase();
   const matching = products.filter(product => {
     const health = inventoryHealth(product);
-    return (!query || product.name.toLowerCase().includes(query) || product.id.toLowerCase().includes(query)) && (inventoryStatus === 'all' || health.key === inventoryStatus);
+    return (!query || ProductCatalogue.matches(product,query) || product.id.toLowerCase().includes(query)) && (inventoryStatus === 'all' || health.key === inventoryStatus);
   });
   const totalPages = Math.max(1, Math.ceil(matching.length / inventoryPageSize));
   inventoryPage = Math.min(Math.max(1, inventoryPage), totalPages);
@@ -967,6 +951,12 @@ function expenseDetail(claim) {
   if (claim.delivery_mode === 'third_party') return `Delivery · ${claim.delivery_provider || 'Third-party service'}`;
   return `Delivery · ${claim.delivery_mode === 'bike' ? 'Bike' : 'Car'} · ${Number(claim.distance_km || 0).toLocaleString('en-IN')} km @ ${money(claim.rate_per_km)}/km`;
 }
+function expenseWhatsappMessage(claim) { return ['*Meraki & Mirth — Expense claim*', `Claim: ${claim.description}`, `Submitted by: ${claim.submitted_by_name || 'Team member'}`, `Date: ${expenseDate(claim.created_at)}`, `Details: ${expenseDetail(claim)}`, ...(Number(claim.extra_amount)>0 ? [`Original: ${money(Number(claim.amount)-Number(claim.extra_amount))}`, `Extra: ${money(claim.extra_amount)}`] : []), `*Total: ${money(claim.amount)}*`, `Status: ${expenseStatusLabel(claim)}`, ...(claim.adjustment_reason ? [`Adjustment: ${claim.adjustment_reason}`] : []), ...(claim.note ? [`Note: ${claim.note}`] : [])].join('\n'); }
+async function copyExpenseClaim(id) {
+ if(!assertAccess())return;const claim=expenseClaims.find(item=>item.id===id);if(!claim)return notify('This claim is no longer available. Refresh expenses and retry.');
+ try {if(!navigator.clipboard?.writeText)throw Error('Clipboard unavailable');await navigator.clipboard.writeText(expenseWhatsappMessage(claim));notify('Claim details copied. Paste them into WhatsApp.','success');}
+ catch {notify('Could not copy. Allow clipboard access in your browser and try again.');}
+}
 function renderExpenses() {
   $('#expensePendingTotal').textContent = money(expenseSummary.pending);
   $('#expenseApprovedTotal').textContent = money(expenseSummary.approved);
@@ -976,11 +966,13 @@ function renderExpenses() {
     return `<article class="expense-balance-card"><div><span>${escapeHtml(admin.display_name)}</span>${admin.can_approve_expenses ? '<em>Approver</em>' : ''}</div><b>${money(balance.approved)}</b><small>To settle · ${money(balance.pending)} awaiting approval</small></article>`;
   }).join('');
   $('#expenseClaimCount').textContent = expenseSummary.count ? `Showing ${expenseClaims.length} of ${expenseSummary.count} claims` : '';
-  $('#expenseList').innerHTML = expenseClaims.map(claim => `<article class="expense-row"><div class="expense-row-main"><p>${escapeHtml(claim.submitted_by_name)} · ${escapeHtml(expenseDate(claim.created_at))}</p><h3>${escapeHtml(claim.description)}</h3><span>${escapeHtml(expenseDetail(claim))}${claim.note ? ` · ${escapeHtml(claim.note)}` : ''}</span></div><b>${money(claim.amount)}</b><span class="expense-status ${escapeHtml(claim.approval_status)}${claim.settled_at ? ' settled' : ''}">${escapeHtml(expenseStatusLabel(claim))}</span><div class="expense-actions">${canReviewExpense(claim) ? `<button class="soft-btn" data-expense-review="approved" data-expense-id="${claim.id}">Approve</button><button class="text-btn" data-expense-review="rejected" data-expense-id="${claim.id}">Reject</button>` : ''}${currentExpenseAdmin()?.can_approve_expenses && claim.approval_status === 'approved' && !claim.settled_at ? `<button class="soft-btn" data-expense-settle="${claim.id}">Mark settled</button>` : ''}${claim.approved_by_name ? `<small>Reviewed by ${escapeHtml(claim.approved_by_name)}</small>` : ''}</div></article>`).join('');
+  $('#expenseList').innerHTML = expenseClaims.map(claim => `<article class="expense-row"><div class="expense-row-main"><p>${escapeHtml(claim.submitted_by_name)} · ${escapeHtml(expenseDate(claim.created_at))}</p><h3>${escapeHtml(claim.description)}</h3><span>${escapeHtml(expenseDetail(claim))}${claim.note ? ` · ${escapeHtml(claim.note)}` : ''}</span></div><b>${money(claim.amount)}</b><span class="expense-status ${escapeHtml(claim.approval_status)}${claim.settled_at ? ' settled' : ''}">${escapeHtml(expenseStatusLabel(claim))}</span><div class="expense-actions"><button class="soft-btn" data-expense-copy="${claim.id}">Copy for WhatsApp</button>${canAdjustExpense(claim) ? `<button class="soft-btn" data-expense-adjust="${claim.id}">Edit claim amount</button>` : ''}${claim.adjustment_reason ? `<small>Original ${money(Number(claim.amount)-Number(claim.extra_amount))} + extra ${money(claim.extra_amount)} · ${escapeHtml(claim.adjustment_reason)}</small>` : ''}${canReviewExpense(claim) ? `<button class="soft-btn" data-expense-review="approved" data-expense-id="${claim.id}">Approve</button><button class="text-btn" data-expense-review="rejected" data-expense-id="${claim.id}">Reject</button>` : ''}${currentExpenseAdmin()?.can_approve_expenses && claim.approval_status === 'approved' && !claim.settled_at ? `<button class="soft-btn" data-expense-settle="${claim.id}">Mark settled</button>` : ''}${claim.approved_by_name ? `<small>Reviewed by ${escapeHtml(claim.approved_by_name)}</small>` : ''}</div></article>`).join('');
   let more = $('#expenseLoadMore');
   if (!more) { more = document.createElement('button'); more.id = 'expenseLoadMore'; more.className = 'soft-btn'; more.onclick = loadMoreExpenses; $('#expenseList').after(more); }
   more.hidden = !expenseHasMore; more.disabled = expensePageLoading; more.textContent = expensePageLoading ? 'Loading…' : 'Load more expenses';
   $('#expenseEmpty').hidden = expenseClaims.length > 0;
+  document.querySelectorAll('[data-expense-copy]').forEach(button => button.onclick = () => copyExpenseClaim(button.dataset.expenseCopy));
+  document.querySelectorAll('[data-expense-adjust]').forEach(button => button.onclick = () => openExpenseAdjustment(button.dataset.expenseAdjust));
   document.querySelectorAll('[data-expense-review]').forEach(button => button.onclick = () => reviewExpense(button.dataset.expenseId, button.dataset.expenseReview));
   document.querySelectorAll('[data-expense-settle]').forEach(button => button.onclick = () => settleExpense(button.dataset.expenseSettle));
 }
@@ -1015,16 +1007,73 @@ async function saveExpense(form) {
 }
 async function reviewExpense(id, action) {
   if (action === 'rejected' && !confirm('Reject this expense claim?')) return;
-  const { error } = await db.rpc('review_expense_claim', { p_claim_id: id, p_action: action, p_note: '' });
+  const { error } = await db.rpc('review_expense_claim_versioned', { p_claim_id: id, p_expected_revision: expenseClaims.find(c=>c.id===id)?.revision, p_action: action, p_note: '' });
   if (error) return notify(error.message); await hydrateFromSupabase(['expenses']);
 }
 async function settleExpense(id) {
   if (!confirm('Mark this approved expense as settled?')) return;
-  const { error } = await db.rpc('settle_expense_claim', { p_claim_id: id, p_note: '' });
+  const { error } = await db.rpc('settle_expense_claim_versioned', { p_claim_id: id, p_expected_revision: expenseClaims.find(c=>c.id===id)?.revision, p_note: '' });
   if (error) return notify(error.message); await hydrateFromSupabase(['expenses']);
 }
 
-function renderAll() { renderStudio(); renderLibrary(); renderCatalogueChoices(); renderQuotes(); renderContacts(); renderInventory(); renderExpenses(); renderOrders(); }
+let editingExpense = null;
+let expenseAdjustmentBusy = false;
+let excelLibrary;
+function canAdjustExpense(claim) { return claim.submitted_by_id === user?.id && !claim.settled_at; }
+function openExpenseAdjustment(id) {
+ if(expenseAdjustmentBusy)return;
+ const claim=expenseClaims.find(c=>c.id===id);if(!claim||!canAdjustExpense(claim))return;
+ editingExpense={...claim};const form=$('#expenseAdjustmentForm');form.reset();form.elements.extraAmount.value=claim.extra_amount||0;
+ $('#expenseAdjustmentDescription').textContent=claim.description;$('#expenseOriginalAmount').textContent=money(Number(claim.amount)-Number(claim.extra_amount||0));
+ updateExpenseAdjustmentTotal();$('#expenseAdjustmentDialog').showModal();
+}
+function updateExpenseAdjustmentTotal() { if(editingExpense)$('#expenseRevisedAmount').textContent=money(Number(editingExpense.amount)-Number(editingExpense.extra_amount||0)+Number($('#expenseAdjustmentForm').elements.extraAmount.value||0)); }
+async function saveExpenseAdjustment(form) {
+ if(!assertAccess()||!editingExpense||expenseAdjustmentBusy)return;
+ const extra=Number(form.elements.extraAmount.value),reason=form.elements.reason.value.trim();
+ if(!Number.isFinite(extra)||extra<0||extra>999999999||Math.abs(extra*100-Math.round(extra*100))>1e-6||!reason)throw Error('Enter a valid extra amount and a reason.');
+ const intent={claim:editingExpense.id,revision:editingExpense.revision,extra,reason};
+ expenseAdjustmentBusy=true;const button=form.querySelector('[type="submit"]');button.disabled=true;$('#closeExpenseAdjustment').disabled=true;
+ try {
+  await writeOnce('expense-adjustment',intent,operation=>db.rpc('adjust_expense_claim',{p_operation:operation,p_claim_id:intent.claim,p_expected_revision:intent.revision,p_extra_amount:extra,p_reason:reason}));
+  $('#expenseAdjustmentDialog').close();editingExpense=null;await refreshAfterCommit(['expenses']);notify('Adjustment saved. Independent approval is required again.','success');
+ } finally {expenseAdjustmentBusy=false;button.disabled=false;$('#closeExpenseAdjustment').disabled=false;}
+}
+function openExpenseExport() {
+ const form=$('#expenseExportForm');form.reset();const date=new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});
+ form.elements.from.value=date.slice(0,7)+'-01';form.elements.to.value=date;form.elements.from.disabled=false;form.elements.to.disabled=false;$('#expenseExportDialog').showModal();
+}
+function loadExcelLibrary() {
+ if(window.ExcelJS)return Promise.resolve(window.ExcelJS);
+ if(!excelLibrary)excelLibrary=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='vendor/exceljs.min.js';script.onload=()=>resolve(window.ExcelJS);script.onerror=()=>{script.remove();excelLibrary=null;reject(Error('Could not load the Excel exporter. Try again.'));};document.head.append(script);});
+ return excelLibrary;
+}
+async function saveExportBlob(blob,filename,title) {
+ if(window.Capacitor?.isNativePlatform?.()) {
+  const filesystem=window.Capacitor.Plugins?.Filesystem,share=window.Capacitor.Plugins?.Share;
+  if(!filesystem||!share)throw Error('File sharing is unavailable in this app build.');
+  const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=()=>reject(Error('Could not read export.'));reader.readAsDataURL(blob);});
+  const file=await filesystem.writeFile({path:filename,data,directory:'CACHE',recursive:true});await share.share({title,url:file.uri,dialogTitle:'Save or share Excel'});
+ } else {const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=filename;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);}
+}
+async function exportExpenses(form) {
+ if(!assertAccess())return;const button=form.querySelector('[type="submit"]');if(button.disabled)return;
+ const from=form.elements.allHistory.checked?null:form.elements.from.value,to=form.elements.allHistory.checked?null:form.elements.to.value;
+ if(from&&to&&from>to)throw Error('Start date must not follow end date.');
+ const epoch=dataEpoch;button.disabled=true;button.textContent='Preparing…';
+ try {
+  const ExcelJS=await loadExcelLibrary();
+  const {data,error}=await db.rpc('export_expense_settlement',{p_from:from,p_to:to});if(error)throw error;
+  if(epoch!==dataEpoch||!accessGranted)throw Error('Your session changed. Please export again.');
+  const workbook=ExpenseExport.buildWorkbook(ExcelJS,data.claims,{from,to,generatedAt:data.generated_at});
+  const bytes=await workbook.xlsx.writeBuffer();
+  if(epoch!==dataEpoch||!accessGranted)throw Error('Your session changed. Please export again.');
+  await saveExportBlob(new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),`Expense-settlement-${from||'all'}-to-${to||'today'}.xlsx`,'Expense settlement');
+  $('#expenseExportDialog').close();notify('Excel export ready.','success');
+ } finally {button.disabled=false;button.textContent='Download Excel';}
+}
+
+function renderAll() { renderProductCatalogue(); renderStudio(); renderLibrary(); renderCatalogueChoices(); renderQuotes(); renderContacts(); renderInventory(); renderExpenses(); renderOrders(); }
 
 document.querySelectorAll('.nav').forEach(button => button.onclick = () => navigate(button.dataset.view)); document.querySelectorAll('[data-studio-tab]').forEach(button => button.onclick = () => setStudioTab(button.dataset.studioTab));
 if (isNativeApp()) { $('#exportCatalogue').textContent = 'Save / share catalogue PDF'; $('#exportQuote').textContent = 'Save / share quote PDF'; }
@@ -1032,7 +1081,7 @@ $('#addProduct').onclick = () => openProductDialog(); $('#manageOccasions').oncl
 $('#comboName').addEventListener('input', renderStudio); $('#marginRange').addEventListener('change', renderStudio); $('#occasion').addEventListener('change', renderStudio); $('#manageComboOccasion').addEventListener('change', renderSavedCombos); $('#studioProductSearch').addEventListener('input', event => { studioProductSearch = event.target.value; renderPicker(); }); $('#studioProductOccasion').addEventListener('change', event => { studioProductOccasion = event.target.value; renderPicker(); }); $('#studioBudgetMin').addEventListener('input', event => { studioBudgetMin = event.target.value; renderPicker(); }); $('#studioBudgetMax').addEventListener('input', event => { studioBudgetMax = event.target.value; renderPicker(); }); $('#studioProductSortToggle').onclick = () => { studioSortMenuOpen = !studioSortMenuOpen; renderPicker(); }; document.querySelectorAll('[data-studio-product-sort]').forEach(button => button.onclick = () => { studioProductSort = button.dataset.studioProductSort; studioSortMenuOpen = false; renderPicker(); }); document.addEventListener('click', event => { if (studioSortMenuOpen && !event.target.closest('.studio-sort-control')) { studioSortMenuOpen = false; renderPicker(); } }); document.addEventListener('keydown', event => { if (event.key === 'Escape' && studioSortMenuOpen) { studioSortMenuOpen = false; renderPicker(); $('#studioProductSortToggle').focus(); } }); $('#clearCombo').onclick = clearCombo; $('#saveCombo').onclick = () => saveCombo();
 $('#catalogueOccasion').addEventListener('change', renderCatalogueChoices); $('#exportCatalogue').onclick = exportCatalogue; $('#quoteOccasion').addEventListener('change', renderQuotes); $('#libraryEventFilter').addEventListener('change', event => { libraryEvent = event.target.value; renderLibrary(); }); $('#librarySearch').addEventListener('input', event => { librarySearch = event.target.value; renderLibrary(); }); $('#librarySort').addEventListener('change', event => { librarySort = event.target.value; renderLibrary(); }); $('#inventorySearch').addEventListener('input', event => { inventorySearch = event.target.value; inventoryPage = 1; renderInventory(); }); $('#inventoryStatus').addEventListener('change', event => { inventoryStatus = event.target.value; inventoryPage = 1; renderInventory(); }); $('#inventoryProduct').addEventListener('change', () => syncInventoryDialog(true)); $('#inventoryAction').addEventListener('change', () => syncInventoryDialog(false)); $('#expenseType').addEventListener('change', syncExpenseDialog); $('#deliveryMode').addEventListener('change', syncExpenseDialog); $('#distanceKm').addEventListener('input', syncExpenseDialog);
 document.querySelectorAll('[data-contacts-tab]').forEach(button => button.onclick = () => setContactsTab(button.dataset.contactsTab)); $('#clientSearch').addEventListener('input', event => { clientSearch = event.target.value; renderContacts(); }); $('#vendorSearch').addEventListener('input', event => { vendorSearch = event.target.value; renderContacts(); });
-['quoteClientName', 'quoteClientMobile', 'quoteDeliveryArea', 'quoteTitle', 'quoteCombo', 'quoteQuantity', 'quoteMargin', 'quoteEventDate', 'quoteDeliveryDate', 'quoteNetWrappingPrice', 'quoteDiscountPercent', 'quoteComplimentary', 'quoteSpecialRequest'].forEach(id => { const input = $(`#${id}`); input.addEventListener('input', renderQuotePreview); input.addEventListener('change', renderQuotePreview); }); $('#quoteNetWrapping').addEventListener('change', () => { syncNetWrappingPrice(); renderQuotePreview(); }); $('#addQuoteAdditionalCost').onclick = addQuoteAdditionalCost; $('#copyQuote').onclick = copyQuote; $('#exportQuote').onclick = exportQuote; $('#saveOrder').onclick = () => saveOrder(); $('#ordersFrom').addEventListener('change', event => { ordersFrom = event.target.value; refreshOrderRange(); }); $('#ordersTo').addEventListener('change', event => { ordersTo = event.target.value; refreshOrderRange(); }); $('#ordersThisYear').onclick = () => { const currentYear = currentYearDateRange(); const alreadySelected = ordersFrom === currentYear.from && ordersTo === currentYear.to; ordersFrom = currentYear.from; ordersTo = currentYear.to; refreshOrderRange(); notify(alreadySelected ? 'Already showing this year.' : 'Showing orders from 1 January to today.', 'success'); };
+['quoteClientName', 'quoteClientMobile', 'quoteDeliveryArea', 'quoteTitle', 'quoteCombo', 'quoteQuantity', 'quoteMargin', 'quoteEventDate', 'quoteDeliveryDate', 'quoteNetWrappingPrice', 'quoteDiscountPercent', 'quoteDiscountType', 'quoteComplimentary', 'quoteSpecialRequest'].forEach(id => { const input = $(`#${id}`); input.addEventListener('input', renderQuotePreview); input.addEventListener('change', renderQuotePreview); }); $('#quoteNetWrapping').addEventListener('change', () => { syncNetWrappingPrice(); renderQuotePreview(); }); $('#addQuoteAdditionalCost').onclick = addQuoteAdditionalCost; $('#copyQuote').onclick = copyQuote; $('#exportQuote').onclick = exportQuote; $('#saveOrder').onclick = () => saveOrder(); $('#ordersFrom').addEventListener('change', event => { ordersFrom = event.target.value; refreshOrderRange(); }); $('#ordersTo').addEventListener('change', event => { ordersTo = event.target.value; refreshOrderRange(); }); $('#ordersThisYear').onclick = () => { const currentYear = currentYearDateRange(); const alreadySelected = ordersFrom === currentYear.from && ordersTo === currentYear.to; ordersFrom = currentYear.from; ordersTo = currentYear.to; refreshOrderRange(); notify(alreadySelected ? 'Already showing this year.' : 'Showing orders from 1 January to today.', 'success'); };
 $('#passwordSignIn').addEventListener('submit', event => { event.preventDefault(); signInWithPassword(event.currentTarget); }); $('#signOut').onclick = () => signOut(); $('#claimWorkspace').onclick = () => claimWorkspace();
 $('#productForm').addEventListener('submit', async event => { event.preventDefault(); try { await saveProduct(event.currentTarget); } catch (error) { notify(error.message || 'Could not save product.'); } });
 $('#productForm').elements.rate.addEventListener('input', syncProductBufferDefault); $('#productForm').elements.buffer.addEventListener('input', event => { const form = event.currentTarget.form; form.dataset.bufferManuallyEdited = 'true'; syncProductRoundedPrice(); });
@@ -1045,3 +1094,67 @@ if (db) {
   db.auth.getSession().then(({ data, error }) => error ? notify(error.message) : updateAccess(data.session)).catch(error => notify(error.message));
   db.auth.onAuthStateChange((_event, session) => { setTimeout(() => updateAccess(session).catch(error => notify(error.message)), 0); });
 } else updateAccess(null);
+
+$('#exportExpenses').onclick=openExpenseExport;
+$('#closeExpenseExport').onclick=()=>$('#expenseExportDialog').close();
+$('#closeExpenseAdjustment').onclick=()=>$('#expenseAdjustmentDialog').close();
+$('#expenseAdjustmentForm').elements.extraAmount.oninput=updateExpenseAdjustmentTotal;
+$('#expenseAdjustmentForm').onsubmit=event=>{event.preventDefault();saveExpenseAdjustment(event.currentTarget).catch(error=>notify(error.message));};
+$('#expenseExportForm').elements.allHistory.onchange=event=>{const form=$('#expenseExportForm');form.elements.from.disabled=event.target.checked;form.elements.to.disabled=event.target.checked;};
+$('#expenseExportForm').onsubmit=event=>{event.preventDefault();exportExpenses(event.currentTarget).catch(error=>notify(error.message));};
+
+$('#expenseAdjustmentDialog').addEventListener('cancel',event=>{if(expenseAdjustmentBusy)event.preventDefault();});
+
+$('#cancelQuoteEdit').onclick = () => { if (!savingQuote) { resetQuoteEdit(); renderQuotePreview(); } };
+
+// Individual gift catalogues
+function setCatalogueTab(kind,focus=false) {
+ const productsActive=kind==='products';
+ for(const [name,active] of [['Combos',!productsActive],['Products',productsActive]]) {
+  const tab=$('#catalogue'+name+'Tab');tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1;
+  $('#catalogue'+name+'Panel').hidden=!active;
+  if(active&&focus)tab.focus();
+ }
+}
+for(const [id,kind] of [['catalogueCombosTab','combos'],['catalogueProductsTab','products']]) {
+ const tab=$('#'+id);tab.onclick=()=>setCatalogueTab(kind);
+ tab.onkeydown=event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();setCatalogueTab(event.key==='Home'?'combos':event.key==='End'?'products':kind==='combos'?'products':'combos',true);};
+}
+// Use existing metadata and optimized export images.
+function productCatalogueOptions() { return { markup:$('#pcMarkup').value,search:$('#pcSearch').value,min:$('#pcMin').value,max:$('#pcMax').value,occasion:$('#pcOccasion').value,role:$('#pcRole').value,tag:$('#pcTag').value,from:$('#pcFrom').value,to:$('#pcTo').value }; }
+function renderProductCatalogue() {
+ const optionList = (id,values,label) => { const select=$(id),prior=select.value; select.innerHTML='<option value="">'+label+'</option>'+values.map(value=>`<option value="${escapeHtml(value)}">${escapeHtml(id==='#pcOccasion'?tagLabel(value):value)}</option>`).join(''); if(values.includes(prior))select.value=prior; };
+ optionList('#pcOccasion',[...new Set(products.flatMap(p=>p.events).filter(tag=>tag!=='all'))].sort(),'All occasions');
+ optionList('#pcTag',[...new Set(products.flatMap(p=>ProductCatalogue.productTags(p)))].sort(),'All tags');
+ const options=productCatalogueOptions();
+ const invalid=!ProductCatalogue.validMarkup(options.markup)||(options.min!==''&&Number(options.min)<0)||(options.max!==''&&Number(options.max)<0)||(options.min!==''&&options.max!==''&&Number(options.min)>Number(options.max))||(options.from&&options.to&&options.from>options.to);
+ const visible=invalid?[]:ProductCatalogue.filter(products,options), ids=new Set(visible.map(p=>p.id));
+ for(const id of productCatalogueSelection)if(!ids.has(id))productCatalogueSelection.delete(id);
+ $('#pcError').textContent=invalid?'Enter a markup from 0% to 1000% and valid price/date ranges.':visible.length?'':'No products match these filters.';
+ $('#pcProducts').innerHTML=visible.map(product=>`<label class="product-card pc-choice"><input type="checkbox" data-pc-id="${escapeHtml(product.id)}" ${productCatalogueSelection.has(product.id)?'checked':''}>${imageMarkup(product,'product-photo')}<h3>${escapeHtml(product.name)}</h3><span>${money(ProductCatalogue.price(product,options.markup))} per item</span></label>`).join('');
+ $('#pcProducts').querySelectorAll('[data-pc-id]').forEach(input=>input.onchange=()=>{if(input.checked)productCatalogueSelection.add(input.dataset.pcId);else productCatalogueSelection.delete(input.dataset.pcId);updateProductCatalogueCount(visible.length);});
+ updateProductCatalogueCount(visible.length);
+}
+function updateProductCatalogueCount(matches) { $('#pcCount').textContent=`${productCatalogueSelection.size} selected · ${matches} matches`; $('#pcExport').disabled=!productCatalogueSelection.size; }
+async function exportProductCatalogue() {
+ if(!assertAccess())return;
+ const options=productCatalogueOptions();
+ if(!ProductCatalogue.validMarkup(options.markup))return notify('Enter a markup between 0% and 1000%.');
+ const chosen=ProductCatalogue.filter(products,options).filter(p=>productCatalogueSelection.has(p.id)).map(p=>({...p}));
+ if(!chosen.length)return notify('Select at least one product.');
+ if(chosen.length>100)return notify('Choose up to 100 products per catalogue to keep the PDF manageable.');
+ const button=$('#pcExport'),epoch=dataEpoch,showPrices=$('#pcPrices').checked,client=$('#pcClient').value.trim();
+ setExportPending(button,true,'Preparing PDF…');
+ try {
+  if(!window.jspdf?.jsPDF)throw Error('PDF tools are still loading. Please retry.');
+  pdfTileCache.clear();
+  const doc=await ProductCatalogue.pdf({jsPDF:window.jspdf.jsPDF,products:chosen,showPrices,markup:Number(options.markup),client,logo:await imageDataForPdf('assets/meraki-mirth-logo-original.png'),image:async product=>{if(epoch!==dataEpoch||!accessGranted)throw Error('Session changed; export cancelled.');const tile=await pdfTileData(product);if(product.image&&!tile)throw Error('A product image could not load. Please retry.');return tile;}});
+  if(epoch!==dataEpoch||!accessGranted)return;
+  const filename=pdfExportFilename('Gift Catalogue',client);
+  if(isNativeApp())await shareNativePdf(doc,filename,'Gift catalogue');else await saveExportBlob(doc.output('blob'),filename,'Gift catalogue');
+ } catch(error){notify(error.message);}finally{pdfTileCache.clear();setExportPending(button,false);}
+}
+['pcMarkup','pcSearch','pcMin','pcMax','pcOccasion','pcRole','pcTag','pcFrom','pcTo'].forEach(id=>{ $('#'+id).addEventListener('change',renderProductCatalogue); if(['pcMarkup','pcSearch','pcMin','pcMax'].includes(id))$('#'+id).addEventListener('input',renderProductCatalogue); });
+$('#pcSelectAll').onclick=()=>{ProductCatalogue.filter(products,productCatalogueOptions()).forEach(p=>productCatalogueSelection.add(p.id));renderProductCatalogue();};
+$('#pcClear').onclick=()=>{productCatalogueSelection.clear();renderProductCatalogue();};
+$('#pcExport').onclick=exportProductCatalogue;
