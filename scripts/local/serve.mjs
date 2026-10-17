@@ -4,7 +4,9 @@ import { resolve, extname, sep } from 'node:path';
 import { root, status } from './common.mjs';
 const port=Number(process.env.PORT||4173);
 const settings = status();
-const config = { url: settings.API_URL, anonKey: settings.ANON_KEY, environment: 'local', disableNotifications: true };
+const { owner } = JSON.parse(await readFile(`${root}/.local/test-accounts.json`, 'utf8'));
+if (owner?.email !== 'owner@example.test' || !owner.password) throw new Error('Run the local seed before starting the development server.');
+const config = { url: settings.API_URL, anonKey: settings.ANON_KEY, environment: 'local', disableNotifications: true, localTestLogin: { email: owner.email, password: owner.password } };
 if (!config.anonKey) throw new Error('Local anon key missing.');
 const csp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' http://127.0.0.1:54321 data: blob:; connect-src 'self' http://127.0.0.1:54321 ws://127.0.0.1:54321; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json' };
@@ -49,6 +51,16 @@ const server = http.createServer(async (req, res) => {
         if (!path.startsWith(resolve(root, 'assets') + sep)) { res.writeHead(403); return res.end(); }
       } else { res.writeHead(404); return res.end(); }
       data = await readFile(path);
+      if (pathname === '/app.js') {
+        data = data.toString().replace(
+          'db.auth.getSession().then(({ data, error })',
+          `db.auth.getSession().then(async result => {
+            if (result.data.session || result.error) return result;
+            if (config.environment !== 'local' || config.url !== 'http://127.0.0.1:54321') throw new Error('Local auto-login refused outside local Supabase.');
+            return db.auth.signInWithPassword(config.localTestLogin);
+          }).then(({ data, error })`
+        );
+      }
       type = types[extname(path)] || 'application/octet-stream';
       if (pathname.startsWith('/assets/')) res.setHeader('Cache-Control', 'public, max-age=3600');
     }
