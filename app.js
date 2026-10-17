@@ -1121,24 +1121,26 @@ for(const [id,kind] of [['catalogueCombosTab','combos'],['catalogueProductsTab',
  tab.onkeydown=event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();setCatalogueTab(event.key==='Home'?'combos':event.key==='End'?'products':kind==='combos'?'products':'combos',true);};
 }
 // Use existing metadata and optimized export images.
-function productCatalogueOptions() { return { search:$('#pcSearch').value,min:$('#pcMin').value,max:$('#pcMax').value,occasion:$('#pcOccasion').value,role:$('#pcRole').value,tag:$('#pcTag').value,from:$('#pcFrom').value,to:$('#pcTo').value }; }
+function productCatalogueOptions() { return { markup:$('#pcMarkup').value,search:$('#pcSearch').value,min:$('#pcMin').value,max:$('#pcMax').value,occasion:$('#pcOccasion').value,role:$('#pcRole').value,tag:$('#pcTag').value,from:$('#pcFrom').value,to:$('#pcTo').value }; }
 function renderProductCatalogue() {
  const optionList = (id,values,label) => { const select=$(id),prior=select.value; select.innerHTML='<option value="">'+label+'</option>'+values.map(value=>`<option value="${escapeHtml(value)}">${escapeHtml(id==='#pcOccasion'?tagLabel(value):value)}</option>`).join(''); if(values.includes(prior))select.value=prior; };
  optionList('#pcOccasion',[...new Set(products.flatMap(p=>p.events).filter(tag=>tag!=='all'))].sort(),'All occasions');
  optionList('#pcTag',[...new Set(products.flatMap(p=>ProductCatalogue.productTags(p)))].sort(),'All tags');
  const options=productCatalogueOptions();
- const invalid=(options.min!==''&&Number(options.min)<0)||(options.max!==''&&Number(options.max)<0)||(options.min!==''&&options.max!==''&&Number(options.min)>Number(options.max))||(options.from&&options.to&&options.from>options.to);
+ const invalid=!ProductCatalogue.validMarkup(options.markup)||(options.min!==''&&Number(options.min)<0)||(options.max!==''&&Number(options.max)<0)||(options.min!==''&&options.max!==''&&Number(options.min)>Number(options.max))||(options.from&&options.to&&options.from>options.to);
  const visible=invalid?[]:ProductCatalogue.filter(products,options), ids=new Set(visible.map(p=>p.id));
  for(const id of productCatalogueSelection)if(!ids.has(id))productCatalogueSelection.delete(id);
- $('#pcError').textContent=invalid?'Check the price and date ranges: minimum/start must not exceed maximum/end.':visible.length?'':'No products match these filters.';
- $('#pcProducts').innerHTML=visible.map(product=>`<label class="product-card pc-choice"><input type="checkbox" data-pc-id="${escapeHtml(product.id)}" ${productCatalogueSelection.has(product.id)?'checked':''}>${imageMarkup(product,'product-photo')}<h3>${escapeHtml(product.name)}</h3><span>${money(ProductCatalogue.price(product))} per item</span></label>`).join('');
+ $('#pcError').textContent=invalid?'Enter a markup from 0% to 1000% and valid price/date ranges.':visible.length?'':'No products match these filters.';
+ $('#pcProducts').innerHTML=visible.map(product=>`<label class="product-card pc-choice"><input type="checkbox" data-pc-id="${escapeHtml(product.id)}" ${productCatalogueSelection.has(product.id)?'checked':''}>${imageMarkup(product,'product-photo')}<h3>${escapeHtml(product.name)}</h3><span>${money(ProductCatalogue.price(product,options.markup))} per item</span></label>`).join('');
  $('#pcProducts').querySelectorAll('[data-pc-id]').forEach(input=>input.onchange=()=>{if(input.checked)productCatalogueSelection.add(input.dataset.pcId);else productCatalogueSelection.delete(input.dataset.pcId);updateProductCatalogueCount(visible.length);});
  updateProductCatalogueCount(visible.length);
 }
 function updateProductCatalogueCount(matches) { $('#pcCount').textContent=`${productCatalogueSelection.size} selected · ${matches} matches`; $('#pcExport').disabled=!productCatalogueSelection.size; }
 async function exportProductCatalogue() {
  if(!assertAccess())return;
- const chosen=ProductCatalogue.filter(products,productCatalogueOptions()).filter(p=>productCatalogueSelection.has(p.id)).map(p=>({...p}));
+ const options=productCatalogueOptions();
+ if(!ProductCatalogue.validMarkup(options.markup))return notify('Enter a markup between 0% and 1000%.');
+ const chosen=ProductCatalogue.filter(products,options).filter(p=>productCatalogueSelection.has(p.id)).map(p=>({...p}));
  if(!chosen.length)return notify('Select at least one product.');
  if(chosen.length>100)return notify('Choose up to 100 products per catalogue to keep the PDF manageable.');
  const button=$('#pcExport'),epoch=dataEpoch,showPrices=$('#pcPrices').checked,client=$('#pcClient').value.trim();
@@ -1146,13 +1148,13 @@ async function exportProductCatalogue() {
  try {
   if(!window.jspdf?.jsPDF)throw Error('PDF tools are still loading. Please retry.');
   pdfTileCache.clear();
-  const doc=await ProductCatalogue.pdf({jsPDF:window.jspdf.jsPDF,products:chosen,showPrices,client,logo:await imageDataForPdf('assets/meraki-mirth-logo-original.png'),image:async product=>{if(epoch!==dataEpoch||!accessGranted)throw Error('Session changed; export cancelled.');const tile=await pdfTileData(product);if(product.image&&!tile)throw Error('A product image could not load. Please retry.');return tile;}});
+  const doc=await ProductCatalogue.pdf({jsPDF:window.jspdf.jsPDF,products:chosen,showPrices,markup:Number(options.markup),client,logo:await imageDataForPdf('assets/meraki-mirth-logo-original.png'),image:async product=>{if(epoch!==dataEpoch||!accessGranted)throw Error('Session changed; export cancelled.');const tile=await pdfTileData(product);if(product.image&&!tile)throw Error('A product image could not load. Please retry.');return tile;}});
   if(epoch!==dataEpoch||!accessGranted)return;
   const filename=pdfExportFilename('Gift Catalogue',client);
   if(isNativeApp())await shareNativePdf(doc,filename,'Gift catalogue');else await saveExportBlob(doc.output('blob'),filename,'Gift catalogue');
  } catch(error){notify(error.message);}finally{pdfTileCache.clear();setExportPending(button,false);}
 }
-['pcSearch','pcMin','pcMax','pcOccasion','pcRole','pcTag','pcFrom','pcTo'].forEach(id=>{ $('#'+id).addEventListener('change',renderProductCatalogue); if(['pcSearch','pcMin','pcMax'].includes(id))$('#'+id).addEventListener('input',renderProductCatalogue); });
+['pcMarkup','pcSearch','pcMin','pcMax','pcOccasion','pcRole','pcTag','pcFrom','pcTo'].forEach(id=>{ $('#'+id).addEventListener('change',renderProductCatalogue); if(['pcMarkup','pcSearch','pcMin','pcMax'].includes(id))$('#'+id).addEventListener('input',renderProductCatalogue); });
 $('#pcSelectAll').onclick=()=>{ProductCatalogue.filter(products,productCatalogueOptions()).forEach(p=>productCatalogueSelection.add(p.id));renderProductCatalogue();};
 $('#pcClear').onclick=()=>{productCatalogueSelection.clear();renderProductCatalogue();};
 $('#pcExport').onclick=exportProductCatalogue;

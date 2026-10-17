@@ -5,16 +5,18 @@
  const tags = value => {const values=[...new Set(String(value || '').split(',').map(normalize).filter(Boolean))];if(values.length>20 || values.some(tag=>tag.length>40))throw Error('Use up to 20 tags, each no longer than 40 characters.');return values;};
  const productTags = product => [...new Set([...(product.collectionTags || []).map(normalize),...(product.catalogueRole ? [normalize(product.catalogueRole)] : [])])];
  const matches = (product,query) => {const haystack=normalize([product.name,...productTags(product)].join(' '));return normalize(query).split(' ').filter(Boolean).every(word=>haystack.includes(word));};
- const price = product => Math.round((Number(product.baseCost || 0) + Number(product.buffer || 0)) * 145 / 100);
+ const validMarkup = value => value !== '' && Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 1000;
+ const price = (product, markup=45) => { if(!validMarkup(markup))throw Error('Enter a markup between 0% and 1000%.'); return Math.round((Number(product.baseCost || 0) + Number(product.buffer || 0)) * (100 + Number(markup)) / 100); };
  const date = value => value ? new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(value)) : '';
  function filter(products, options) {
+  if(!validMarkup(options.markup ?? 45))return [];
   return products.filter(product => {
-   const amount = price(product), added = date(product.createdAt);
+   const amount = price(product, options.markup), added = date(product.createdAt);
    return (options.min === '' || amount >= Number(options.min)) && (options.max === '' || amount <= Number(options.max)) &&
     (!options.role || productTags(product).includes(normalize(options.role))) && (!options.tag || productTags(product).includes(normalize(options.tag))) && (!options.search || matches(product,options.search)) &&
     (!options.occasion || (product.events || []).includes(options.occasion) || (product.events || []).includes('all')) &&
     (!options.from || (added && added >= options.from)) && (!options.to || (added && added <= options.to));
-  }).sort((a,b)=>price(a)-price(b) || a.name.localeCompare(b.name));
+  }).sort((a,b)=>price(a,options.markup)-price(b,options.markup) || a.name.localeCompare(b.name));
  }
  const palette={ink:[24,59,52],gold:[157,108,61],muted:[110,104,95],paper:[251,247,240],line:[226,215,199]};
  const safe=value=>String(value||'').replace(/[‘’]/g,"'").replace(/[“”]/g,'"').replace(/[–—]/g,'-');
@@ -36,7 +38,7 @@
   text(doc,`${String(page).padStart(2,'0')} / ${String(pages).padStart(2,'0')}`,177,285,20,{size:8,color:palette.gold});
  }
  function reference(product,index) { const sku=String(product.sku||'');return /^[a-z0-9_-]{1,18}$/i.test(sku)?sku.toUpperCase():`GIFT ${String(index+1).padStart(2,'0')}`; }
- async function pdf({jsPDF,products,showPrices,client='',image,logo=null}) {
+ async function pdf({jsPDF,products,showPrices,markup=45,client='',image,logo=null}) {
   const doc=new jsPDF({unit:'mm',format:'a4',compress:true});
   for(let index=0;index<products.length;index++) {
    if(index&&index%2===0)doc.addPage();
@@ -48,9 +50,9 @@
    else text(doc,'Photograph coming soon',28,top+48,75,{size:11,font:'times',style:'italic',color:palette.muted});
    text(doc,reference(product,index),117,top+15,69,{size:8,style:'bold',color:palette.gold});
    const end=text(doc,product.name,117,top+28,69,{size:20,font:'times',maxLines:5});
-   if(showPrices){doc.setDrawColor(...palette.line);doc.line(117,end+5,186,end+5);text(doc,`INR ${price(product).toLocaleString('en-IN')}`,117,end+15,69,{size:16,font:'times'});text(doc,'PER PIECE',117,end+22,69,{size:7,style:'bold',color:palette.muted});}
+   if(showPrices){doc.setDrawColor(...palette.line);doc.line(117,end+5,186,end+5);text(doc,`INR ${price(product,markup).toLocaleString('en-IN')}`,117,end+15,69,{size:16,font:'times'});text(doc,'PER PIECE',117,end+22,69,{size:7,style:'bold',color:palette.muted});}
   }
   return doc;
  }
- root.ProductCatalogue={roles,tags,productTags,matches,normalize,price,date,filter,pdf,frame,text,reference,palette};
+ root.ProductCatalogue={roles,tags,productTags,matches,normalize,validMarkup,price,date,filter,pdf,frame,text,reference,palette};
 })(globalThis);

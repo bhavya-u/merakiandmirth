@@ -99,12 +99,12 @@
 <div class="pc-intro"><h3>Find the right gifts</h3><p>Filter by your client’s budget, then select the pieces to include.</p></div>
 <label class="pc-search">Search products or tags<input id="pcSearch" type="search" placeholder="e.g. bags, main gift, german silver"></label>
 <div class="product-catalogue-filters">
-<label>Minimum price (₹)<input id="pcMin" type="number" min="0" step="1" placeholder="Any"></label><label>Maximum price (₹)<input id="pcMax" type="number" min="0" step="1" placeholder="Any"></label>
+<label>Markup (%)<input id="pcMarkup" type="number" min="0" max="1000" step="0.1" value="45" aria-describedby="pcPricingHelp"></label><label>Minimum price (₹)<input id="pcMin" type="number" min="0" step="1" placeholder="Any"></label><label>Maximum price (₹)<input id="pcMax" type="number" min="0" step="1" placeholder="Any"></label>
 <label>Occasion<select id="pcOccasion"></select></label><label>Product role<select id="pcRole"><option value="">All roles</option><option value="main-gift">Main gift</option><option value="add-on">Add-on</option><option value="packaging">Packaging</option></select></label>
 <label>Tags<select id="pcTag"></select></label></div><details class="pc-more-filters"><summary>More filters</summary><div class="pc-date-filters"><label>Added from<input id="pcFrom" type="date"></label><label>Added through<input id="pcTo" type="date"></label></div></details><div class="pc-export-settings">
 <label>Client name<input id="pcClient" maxlength="80" placeholder="Optional"></label>
 <label class="pc-toggle"><input id="pcPrices" type="checkbox" checked> Show prices in PDF</label></div>
-<p>Prices include 45% added to cost plus buffer. Add searchable tags in Product Library → Edit.</p>
+<p id="pcPricingHelp">Default markup is 45%, added to cost plus buffer. Changing it updates catalogue prices and budget matches only. Add searchable tags in Product Library → Edit.</p>
 <div class="pc-actions"><div class="pc-selection-actions"><button id="pcSelectAll" class="soft-btn">Select all matches</button><button id="pcClear" class="soft-btn">Clear selection</button><span id="pcCount" aria-live="polite"></span></div><button id="pcExport" class="primary-btn">Download product catalogue PDF</button></div>
 <p id="pcError" role="status"></p><div id="pcProducts" class="library-grid"></div>
 </div>
