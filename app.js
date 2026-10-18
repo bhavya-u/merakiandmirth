@@ -263,6 +263,9 @@ function dataQueries() {
 }
 
 async function updateAccess(session) {
+  // Supabase emits SIGNED_IN on refocus and TOKEN_REFRESHED during an edit.
+  // Preserve the draft's identity for the same authenticated workspace user.
+  if (session?.user?.id && session.user.id === user?.id && accessGranted) { user = session.user; return; }
   dataEpoch++;
   resetQuoteEdit();
   productCatalogueSelection.clear();
@@ -688,7 +691,7 @@ async function exportCatalogue() {
 }
 
 function quotePricing(combo, margin) { const saved = typeof editingQuote !== 'undefined' && editingQuote; const sameCombo = saved && combo.id === saved.comboId; const cost = sameCombo ? saved.unitCost : comboCost(combo.productIds); return { cost, price: sameCombo && margin === saved.margin ? saved.price : Math.round(cost * (1 + margin / 100)) }; }
-function resetQuoteEdit() { editingQuote = null; $('#quoteEditNotice').hidden = true; $('#saveOrder').textContent = 'Save quotation & view tracking'; }
+function resetQuoteEdit() { editingQuote = null; $('#quoteEditNotice').hidden = !$('#saveOrder').dataset.quoteId; if ($('#saveOrder').dataset.quoteId) $('#quoteEditLabel').textContent = 'This quotation form is already linked to a saved record. Reopen it from Orders to edit again, or start a new quote.'; $('#saveOrder').textContent = 'Save quotation & view tracking'; }
 async function editSavedQuote(id) {
  if (savingQuote || !assertAccess()) return;
  const epoch = dataEpoch;
@@ -699,6 +702,7 @@ async function editSavedQuote(id) {
  if (row.thank_you_card_unit_price || row.thank_you_card_design_fee || (row.thank_you_card_style && row.thank_you_card_style !== 'none')) return notify('This legacy quote contains card add-ons that this editor cannot change safely.');
  const order = orderFromRow(row), primary = row.items?.[0] || {};
  if (!combos.some(combo => combo.id === order.comboId)) return notify('The saved combo is no longer available. Restore it before editing this quote.');
+ $('#saveOrder').dataset.quoteId = id;
  editingQuote = { id, expected: row, comboId: order.comboId, margin: Number(primary.margin ?? 30), unitCost: Number(primary.unitCost ?? row.cost_snapshot / row.qty), price: Number(primary.pricePerCombo ?? (order.subtotalBeforeDiscount - order.additionalCosts.reduce((sum,c)=>sum+c.amount,0)) / order.quantity - order.netWrappingUnitPrice) };
  $('#orderDetailDialog').close();
  await navigate('quotes');
@@ -707,7 +711,7 @@ async function editSavedQuote(id) {
  for (const [key,value] of Object.entries(fields)) $('#'+key).value = value;
  const margin = $('#quoteMargin'); if (![...margin.options].some(option=>Number(option.value)===editingQuote.margin)) margin.add(new Option(editingQuote.margin+'%',String(editingQuote.margin))); margin.value = editingQuote.margin;
  quoteAdditionalCosts = order.additionalCosts.map(cost=>({...cost,id:uuid()}));
- $('#quoteEditNotice').hidden = false; $('#quoteEditLabel').textContent = 'Editing '+order.code+' — changes update this quotation. Download and resend the revised PDF after saving.'; $('#saveOrder').textContent = 'Save quote changes';
+ $('#quoteEditNotice').hidden = false; $('#quoteEditLabel').textContent = 'Editing '+order.code+' — changes update this quotation. Download and resend the revised PDF after saving.'; $('#saveOrder').textContent = 'Update quotation & view tracking';
  syncNetWrappingPrice(); renderQuoteAdditionalCosts(); renderQuotePreview();
 }
 function selectedQuoteCombo() { return combos.find(combo => combo.id === $('#quoteCombo').value); }
@@ -773,11 +777,12 @@ async function refreshAfterCommit(groups) {
   try { await hydrateFromSupabase(groups); }
   catch (error) { notify(`Saved successfully, but the screen could not refresh: ${error.message}. Reload to see the saved result.`); }
 }
-async function saveOrder() { if (savingQuote || !assertAccess()) return; const quote = quoteValues(); if (!quote.combo) return notify('Choose a saved combo before saving a quotation.'); if (!quote.clientName) return notify('Add the client name before saving this quotation.'); if (!/^\d{7,15}$/.test(quote.clientMobile)) return notify('Add a valid client mobile number before saving this quotation.'); savingQuote = true; $('#saveOrder').disabled = true; $('#cancelQuoteEdit').disabled = true; try {
+async function saveOrder() { if (savingQuote || !assertAccess()) return; if ($('#saveOrder').dataset.quoteId && !editingQuote) return notify('This form belongs to an existing quotation. Reopen Edit quotation from Orders, or choose Start a new quote.'); const quote = quoteValues(); if (!quote.combo) return notify('Choose a saved combo before saving a quotation.'); if (!quote.clientName) return notify('Add the client name before saving this quotation.'); if (!/^\d{7,15}$/.test(quote.clientMobile)) return notify('Add a valid client mobile number before saving this quotation.'); savingQuote = true; $('#saveOrder').disabled = true; $('#cancelQuoteEdit').disabled = true; try {
  const client = { name: quote.clientName, mobile_number: quote.clientMobile, delivery_area: quote.deliveryArea };
  const order = { combo_id: quote.combo.id, title: quote.title, event: quote.combo.occasion, qty: quote.quantity, total: quote.total, status: 'Quotation sent', customer_name: quote.clientName, customer_phone: quote.clientMobile, delivery_area: quote.deliveryArea, special_request: quote.specialRequest, complimentary: quote.complimentary, event_date: quote.eventDate || null, delivery_date: quote.deliveryDate || null, net_wrapping: quote.netWrapping, net_wrapping_unit_price: quote.netWrappingUnitPrice, additional_costs: quote.additionalCosts, discount_percent: quote.discountPercent, discount_amount: quote.discountAmount, subtotal_before_discount: quote.subtotal, cost_snapshot: quote.cost * quote.quantity, items: [{ comboId: quote.combo.id, comboName: quote.combo.name, margin: quote.margin, pricePerCombo: quote.price, unitCost: quote.cost, clientMobile: quote.clientMobile, deliveryArea: quote.deliveryArea, eventDate: quote.eventDate, deliveryDate: quote.deliveryDate, netWrapping: quote.netWrapping, netWrappingUnitPrice: quote.netWrappingUnitPrice, netWrappingTotal: quote.netWrappingTotal, additionalCosts: quote.additionalCosts, additionalCostTotal: quote.additionalCostTotal, complimentary: quote.complimentary, discountType: quote.discountType, discountPercent: quote.discountPercent, discountAmount: quote.discountAmount, subtotalBeforeDiscount: quote.subtotal }] };
  const edit = editingQuote;
  const data = edit ? await writeOnce('quotation-edit', { id: edit.id, expected: edit.expected, client, order }, operation => db.rpc('update_quotation_once', {p_operation:operation,p_id:edit.id,p_expected:edit.expected,p_client:client,p_order:order})) : await writeOnce('quotation', { client, order }, operation => db.rpc('save_quotation_once', { p_operation: operation, p_client: client, p_order: order }));
+ if (data?.id) $('#saveOrder').dataset.quoteId = data.id;
  resetQuoteEdit();
  void dispatchTelegramNotifications();
  notify('Quotation saved in the celebration workboard.', 'success');
@@ -1076,7 +1081,7 @@ async function exportExpenses(form) {
 function renderAll() { renderProductCatalogue(); renderStudio(); renderLibrary(); renderCatalogueChoices(); renderQuotes(); renderContacts(); renderInventory(); renderExpenses(); renderOrders(); }
 
 document.querySelectorAll('.nav').forEach(button => button.onclick = () => navigate(button.dataset.view)); document.querySelectorAll('[data-studio-tab]').forEach(button => button.onclick = () => setStudioTab(button.dataset.studioTab));
-if (isNativeApp()) { $('#exportCatalogue').textContent = 'Save / share catalogue PDF'; $('#exportQuote').textContent = 'Save / share quote PDF'; }
+if (isNativeApp()) { $('#exportCatalogue').textContent = 'Save / share catalogue PDF'; $('#exportQuote').textContent = 'Download / share PDF only'; }
 $('#addProduct').onclick = () => openProductDialog(); $('#manageOccasions').onclick = openOccasionDialog; $('#inventoryAddProduct').onclick = () => { navigate('library'); openProductDialog(); }; $('#addExpense').onclick = openExpenseDialog; $('#addClient').onclick = openClientDialog; $('#addVendor').onclick = () => openVendorDialog(); $('#closeDialog').onclick = () => $('#productDialog').close(); $('#closeOccasionDialog').onclick = () => $('#occasionDialog').close(); $('#closeInventoryDialog').onclick = () => $('#inventoryDialog').close(); $('#closeExpenseDialog').onclick = () => $('#expenseDialog').close(); $('#closeClientDialog').onclick = () => $('#clientDialog').close(); $('#closeVendorDialog').onclick = () => $('#vendorDialog').close(); $('#closeOrderDetailDialog').onclick = () => $('#orderDetailDialog').close(); $('#closeComboDetailDialog').onclick = () => $('#comboDetailDialog').close(); $('#closeProductDetailDialog').onclick = () => $('#productDetailDialog').close();
 $('#comboName').addEventListener('input', renderStudio); $('#marginRange').addEventListener('change', renderStudio); $('#occasion').addEventListener('change', renderStudio); $('#manageComboOccasion').addEventListener('change', renderSavedCombos); $('#studioProductSearch').addEventListener('input', event => { studioProductSearch = event.target.value; renderPicker(); }); $('#studioProductOccasion').addEventListener('change', event => { studioProductOccasion = event.target.value; renderPicker(); }); $('#studioBudgetMin').addEventListener('input', event => { studioBudgetMin = event.target.value; renderPicker(); }); $('#studioBudgetMax').addEventListener('input', event => { studioBudgetMax = event.target.value; renderPicker(); }); $('#studioProductSortToggle').onclick = () => { studioSortMenuOpen = !studioSortMenuOpen; renderPicker(); }; document.querySelectorAll('[data-studio-product-sort]').forEach(button => button.onclick = () => { studioProductSort = button.dataset.studioProductSort; studioSortMenuOpen = false; renderPicker(); }); document.addEventListener('click', event => { if (studioSortMenuOpen && !event.target.closest('.studio-sort-control')) { studioSortMenuOpen = false; renderPicker(); } }); document.addEventListener('keydown', event => { if (event.key === 'Escape' && studioSortMenuOpen) { studioSortMenuOpen = false; renderPicker(); $('#studioProductSortToggle').focus(); } }); $('#clearCombo').onclick = clearCombo; $('#saveCombo').onclick = () => saveCombo();
 $('#catalogueOccasion').addEventListener('change', renderCatalogueChoices); $('#exportCatalogue').onclick = exportCatalogue; $('#quoteOccasion').addEventListener('change', renderQuotes); $('#libraryEventFilter').addEventListener('change', event => { libraryEvent = event.target.value; renderLibrary(); }); $('#librarySearch').addEventListener('input', event => { librarySearch = event.target.value; renderLibrary(); }); $('#librarySort').addEventListener('change', event => { librarySort = event.target.value; renderLibrary(); }); $('#inventorySearch').addEventListener('input', event => { inventorySearch = event.target.value; inventoryPage = 1; renderInventory(); }); $('#inventoryStatus').addEventListener('change', event => { inventoryStatus = event.target.value; inventoryPage = 1; renderInventory(); }); $('#inventoryProduct').addEventListener('change', () => syncInventoryDialog(true)); $('#inventoryAction').addEventListener('change', () => syncInventoryDialog(false)); $('#expenseType').addEventListener('change', syncExpenseDialog); $('#deliveryMode').addEventListener('change', syncExpenseDialog); $('#distanceKm').addEventListener('input', syncExpenseDialog);
@@ -1105,7 +1110,7 @@ $('#expenseExportForm').onsubmit=event=>{event.preventDefault();exportExpenses(e
 
 $('#expenseAdjustmentDialog').addEventListener('cancel',event=>{if(expenseAdjustmentBusy)event.preventDefault();});
 
-$('#cancelQuoteEdit').onclick = () => { if (!savingQuote) { resetQuoteEdit(); renderQuotePreview(); } };
+$('#cancelQuoteEdit').onclick = () => { if (!savingQuote) { resetQuoteEdit(); delete $('#saveOrder').dataset.quoteId; $('#quoteClientName').value = ''; $('#quoteClientMobile').value = ''; $('#quoteTitle').value = ''; renderQuotePreview(); } };
 
 // Individual gift catalogues
 function setCatalogueTab(kind,focus=false) {
