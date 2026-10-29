@@ -729,8 +729,34 @@ function formattedDate(value) { return value ? new Date(`${value}T00:00:00`).toL
 function quoteDeliveryDetails(quote) { return [quote.deliveryDate ? `Delivery date: ${formattedDate(quote.deliveryDate)}` : '', quote.deliveryArea ? `Delivery area: ${quote.deliveryArea}` : ''].filter(Boolean); }
 function quoteDiscountLabel(quote) { const type = String(quote.discountType || '').trim().slice(0, 60); return `${quote.discountPercent}% ${type ? `${type} ` : ''}discount`; }
 function renderQuotePreview() { const quote = quoteValues(), inclusions = quoteClientInclusions(quote), deliveryDetails = quoteDeliveryDetails(quote); $('#quotePreview').innerHTML = quote.combo ? `<p class="section-label">YOUR CELEBRATION QUOTE</p><h3>${escapeHtml(quote.title)}</h3><p class="quote-warm-note">${escapeHtml(quoteThankYou(quote))}</p><div class="quote-line"><span>Handpicked curated set</span><b>${escapeHtml(quote.combo.name)}</b></div><div class="quote-line"><span>Price per curated set</span><b>${money(quote.price)}</b></div><details class="quote-set-contents"><summary><span>What’s inside this curated set</span><span>View products</span></summary><ul>${inclusions.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></details><div class="quote-line"><span>Curated sets</span><b>${quote.quantity}</b></div>${quote.eventDate ? `<div class="quote-line"><span>Event date</span><b>${escapeHtml(formattedDate(quote.eventDate))}</b></div>` : ''}${deliveryDetails.length ? `<div class="quote-line"><span>Delivery details</span><b>${escapeHtml(deliveryDetails.join(' · '))}</b></div>` : ''}${quote.discountAmount ? `<div class="quote-line discount"><span>${escapeHtml(quoteDiscountLabel(quote))}</span><b>− ${money(quote.discountAmount)}</b></div>` : ''}<div class="quote-line total"><span>Your celebration total</span><b>${money(quote.total)}</b></div>${quote.complimentary ? `<div class="quote-note"><span>Complimentary touches</span><p>${escapeHtml(quote.complimentary)}</p></div>` : ''}${quote.specialRequest ? `<div class="quote-request"><span>A little note from you</span><p>${escapeHtml(quote.specialRequest)}</p></div>` : ''}<p class="quote-signoff">With warmth,<br><b>Meraki &amp; Mirth</b><br><em>For the moments worth thanking.</em></p>` : '<p class="muted">Create a combo in Studio to prepare a quote.</p>'; }
-function quoteWhatsappText(quote) { const inclusionList = quoteClientInclusions(quote).map(item => `• ${item}`).join('\n'), deliveryDetails = quoteDeliveryDetails(quote); return `✨ *${quote.title}* ✨\n\n${quoteThankYou(quote)}\n\n*Your thoughtfully curated set*\n${quote.combo.name}\n\n*What’s inside your curated set*\n${inclusionList}\n\n*Your quote at a glance*\n• ₹${quote.price.toLocaleString('en-IN')} per curated set\n• ${quote.quantity} curated sets${quote.eventDate ? `\n• *Event date: ${formattedDate(quote.eventDate)}*` : ''}${deliveryDetails.length ? `\n\n*Delivery details*\n${deliveryDetails.map(item => `• ${item}`).join('\n')}` : ''}${quote.discountAmount ? `\n• ${quoteDiscountLabel(quote)}: −₹${quote.discountAmount.toLocaleString('en-IN')}` : ''}\n• *Celebration total: ₹${quote.total.toLocaleString('en-IN')}*${quote.complimentary ? `\n\n*Complimentary touches*\n${quote.complimentary}` : ''}${quote.specialRequest ? `\n\n*Your special request*\n${quote.specialRequest}` : ''}\n\nWe cannot wait to add a little more joy to your celebration. 🌼\n\nWith warmth,\n*Meraki & Mirth*\n_For the moments worth thanking._`; }
-function copyQuote() { const quote = quoteValues(); if (!quote.combo) return; navigator.clipboard?.writeText(quoteWhatsappText(quote)); $('#copyQuote').textContent = 'WhatsApp message copied'; setTimeout(() => $('#copyQuote').textContent = 'Copy WhatsApp message', 1800); }
+function quoteWhatsappText(quote) {
+ const currency = value => '₹' + Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+ const date = value => new Date(value + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+ const items = quoteSetItems(quote);
+ const wrapping = quote.netWrapping ? Number(quote.netWrappingUnitPrice || 0) : 0;
+ const lines = [ [quote.clientName, quote.title].filter(Boolean).join(' | '), '', 'Product Details', '',
+  ...items.map(product => `• ${product.name} – ${currency(product.rate)}`),
+  ...(quote.netWrapping ? [`• Net Wrap – ${currency(wrapping)}`] : []), '',
+  `Product Total: ${currency(items.reduce((sum, product) => sum + Number(product.rate || 0), 0) + wrapping)}`,
+  `Margin: ${quote.margin}%`, `Price per Curated Set: ${currency(quote.price + wrapping)}`, '',
+  `Quantity: ${quote.quantity} sets`,
+  ...(quote.additionalCostTotal ? [`Additional charges: ${currency(quote.additionalCostTotal)}`] : []),
+  ...(quote.discountAmount ? [`${quoteDiscountLabel(quote)}: −${currency(quote.discountAmount)}`] : []),
+  `Celebration Total: ${currency(quote.total)}`, '',
+  ...(quote.deliveryArea ? [`Event Location: ${quote.deliveryArea}`] : []),
+  ...(quote.deliveryDate ? [`Delivery Date: ${date(quote.deliveryDate)}`] : []),
+  ...(quote.eventDate ? [`Event Date: ${date(quote.eventDate)}`] : []),
+  ...(quote.complimentary ? ['', `Complimentary touches: ${quote.complimentary}`] : []),
+  ...(quote.specialRequest ? ['', `Special request: ${quote.specialRequest}`] : [])
+ ];
+ return lines.join('\n').trim();
+}
+async function copyQuote() {
+ const quote = quoteValues(); if (!quote.combo) return;
+ try { await navigator.clipboard.writeText(quoteWhatsappText(quote)); $('#copyQuote').textContent = 'WhatsApp message copied'; setTimeout(() => $('#copyQuote').textContent = 'Copy WhatsApp message', 1800); }
+ catch { notify('Could not copy. Allow clipboard access and try again.'); }
+}
+
 async function exportQuoteNative(quote) { return exportQuoteNativeEnhanced(quote); }
 async function exportQuote() {
   const quote = quoteValues();
