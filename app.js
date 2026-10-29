@@ -1159,19 +1159,24 @@ function renderProductCatalogue() {
  optionList('#pcTag',[...new Set(products.flatMap(p=>ProductCatalogue.productTags(p)))].sort(),'All tags');
  const options=productCatalogueOptions();
  const invalid=!ProductCatalogue.validMarkup(options.markup)||(options.min!==''&&Number(options.min)<0)||(options.max!==''&&Number(options.max)<0)||(options.min!==''&&options.max!==''&&Number(options.min)>Number(options.max))||(options.from&&options.to&&options.from>options.to);
- const visible=invalid?[]:ProductCatalogue.filter(products,options), ids=new Set(visible.map(p=>p.id));
- for(const id of productCatalogueSelection)if(!ids.has(id))productCatalogueSelection.delete(id);
+ const visible=invalid?[]:ProductCatalogue.filter(products,options);
  $('#pcError').textContent=invalid?'Enter a markup from 0% to 1000% and valid price/date ranges.':visible.length?'':'No products match these filters.';
  $('#pcProducts').innerHTML=visible.map(product=>`<label class="product-card pc-choice"><input type="checkbox" data-pc-id="${escapeHtml(product.id)}" ${productCatalogueSelection.has(product.id)?'checked':''}>${imageMarkup(product,'product-photo')}<h3>${escapeHtml(product.name)}</h3><span>${money(ProductCatalogue.price(product,options.markup))} per item</span></label>`).join('');
- $('#pcProducts').querySelectorAll('[data-pc-id]').forEach(input=>input.onchange=()=>{if(input.checked)productCatalogueSelection.add(input.dataset.pcId);else productCatalogueSelection.delete(input.dataset.pcId);updateProductCatalogueCount(visible.length);});
- updateProductCatalogueCount(visible.length);
+ $('#pcProducts').querySelectorAll('[data-pc-id]').forEach(input=>input.onchange=()=>{if(input.checked)productCatalogueSelection.add(input.dataset.pcId);else productCatalogueSelection.delete(input.dataset.pcId);updateProductCatalogueCount(visible);});
+ updateProductCatalogueCount(visible);
 }
-function updateProductCatalogueCount(matches) { $('#pcCount').textContent=`${productCatalogueSelection.size} selected · ${matches} matches`; $('#pcExport').disabled=!productCatalogueSelection.size; }
+function updateProductCatalogueCount(visible) {
+ const hidden = productCatalogueSelection.size - visible.filter(product=>productCatalogueSelection.has(product.id)).length;
+ $('#pcCount').textContent=`${productCatalogueSelection.size} selected${hidden ? ` (${hidden} outside current filters)` : ''} · ${visible.length} matches`;
+ $('#pcExport').disabled=!productCatalogueSelection.size;
+}
+
 async function exportProductCatalogue() {
  if(!assertAccess())return;
  const options=productCatalogueOptions();
  if(!ProductCatalogue.validMarkup(options.markup))return notify('Enter a markup between 0% and 1000%.');
- const chosen=ProductCatalogue.filter(products,options).filter(p=>productCatalogueSelection.has(p.id)).map(p=>({...p}));
+ const chosen=products.filter(p=>productCatalogueSelection.has(p.id)).map(p=>({...p})).sort((a,b)=>ProductCatalogue.price(a,options.markup)-ProductCatalogue.price(b,options.markup)||a.name.localeCompare(b.name));
+ if(chosen.length!==productCatalogueSelection.size)return notify('A selected product is no longer available. Clear the selection and choose your gifts again.');
  if(!chosen.length)return notify('Select at least one product.');
  if(chosen.length>100)return notify('Choose up to 100 products per catalogue to keep the PDF manageable.');
  const button=$('#pcExport'),epoch=dataEpoch,showPrices=$('#pcPrices').checked,client=$('#pcClient').value.trim();
