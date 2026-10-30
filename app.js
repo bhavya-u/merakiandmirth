@@ -624,9 +624,9 @@ function catalogueGalleryLayout(count) {
   const tileSize = Math.min(86, (164 - (columns - 1) * gap) / columns, (110 - (rows - 1) * gap) / rows);
   return { columns, tileSize, gap };
 }
-async function drawNativeCataloguePage(doc, pageCombos, heading, totalCombos, pageNumber, pageCount, logo) {
+async function drawNativeCataloguePage(doc, pageCombos, heading, totalCombos, pageNumber, pageCount, logo, quoteOptions = null) {
  const design=ProductCatalogue,combo=pageCombos[0],items=comboProducts(combo);
- design.frame(doc,{title:'The Curated Edit',client:$('#catalogueClientName').value.trim(),page:pageNumber,pages:pageCount,logo});
+ design.frame(doc,{title:quoteOptions ? 'The Celebration Edit' : 'The Curated Edit',client:quoteOptions ? quoteOptions.client : $('#catalogueClientName').value.trim(),page:pageNumber,pages:pageCount,logo});
  design.text(doc,`${String(pageNumber).padStart(2,'0')}  /  ${tagLabel(normalizeTag(combo.occasion)).toUpperCase()}`,16,64,178,{size:8,style:'bold',color:design.palette.gold});
  const titleEnd=design.text(doc,combo.name,16,76,178,{size:25,font:'times',maxLines:2});
  const galleryTop=titleEnd+6,columns=items.length>6?3:2,rows=Math.ceil(items.length/columns),width=178/columns;
@@ -638,7 +638,7 @@ async function drawNativeCataloguePage(doc, pageCombos, heading, totalCombos, pa
  if(layout.tileSize<20)throw Error('This combo has too much text for one page. Shorten its product names before exporting.');
  await drawPdfProductGallery(doc,items,{centerX:105,top:galleryTop,...layout});
  doc.setDrawColor(...design.palette.line);doc.line(16,detailTop,194,detailTop);
- design.text(doc,`${pdfMoney(liveComboRate(combo))} per curated set`,16,detailTop+10,178,{size:15,font:'times'});
+ design.text(doc,`${pdfMoney(quoteOptions ? quoteOptions.price : liveComboRate(combo))} per curated set`,16,detailTop+10,178,{size:15,font:'times'});
  design.text(doc,'INCLUDED IN YOUR SET',16,detailTop+19,178,{size:7.5,style:'bold',color:design.palette.gold});
  for(let column=0;column<columns;column++){let y=detailTop+26;for(const item of items.slice(column*rows,(column+1)*rows))y=design.text(doc,item.name,16+column*width,y,width-6,{size:9,maxLines:3,color:design.palette.muted})+2;}
 }
@@ -759,22 +759,12 @@ async function copyQuote() {
 
 async function exportQuoteNative(quote) { return exportQuoteNativeEnhanced(quote); }
 async function exportQuote() {
-  const quote = quoteValues();
-  if (!quote.combo) return notify('Choose a saved combo before downloading a quote.');
-  if (isNativeApp()) {
-    const button = $('#exportQuote'); setExportPending(button, true, 'Preparing PDF…');
-    try { await exportQuoteNativeEnhanced(quote); notify('Your quote is ready to save or share.', 'success'); }
-    catch (error) { notify(error.message || 'Could not create the quote PDF.'); }
-    finally { setExportPending(button, false); }
-    return;
-  }
-  const items = quoteSetItems(quote);
-  const inclusions = quoteClientInclusions(quote);
-  const productStrip = items.map((product, index) => `${index ? '<i aria-hidden="true">+</i>' : ''}<figure>${imageMarkup(product, 'print-quote-product-image')}</figure>`).join('');
-  const eventDetails = quote.eventDate ? `Event date: ${formattedDate(quote.eventDate)}` : '', deliveryDetails = quoteDeliveryDetails(quote).join(' · ');
-  const fulfilmentNote = 'Home pickup is always welcome. If you prefer delivery, we will gladly arrange it; Porter charges apply at actuals.';
-  $('#printCatalogue').innerHTML = `<section class="print-catalogue-sheet print-quote-sheet"><header><img src="assets/meraki-mirth-logo-original.png" alt="Meraki &amp; Mirth"><div><p>YOUR CELEBRATION QUOTE</p><h1>${escapeHtml(quote.title)}</h1><span>Prepared with warmth by Meraki &amp; Mirth</span></div></header><div class="print-quote-body"><div class="print-quote-message"><p>${escapeHtml(quoteThankYou(quote))}</p><strong>${escapeHtml(quote.combo.name)}</strong><span>${escapeHtml(tagLabel(normalizeTag(quote.combo.occasion)))}</span>${eventDetails ? `<aside><b>Celebration schedule</b><p>${escapeHtml(eventDetails)}</p></aside>` : ''}${deliveryDetails ? `<aside><b>Delivery details</b><p>${escapeHtml(deliveryDetails)}</p></aside>` : ''}${quote.complimentary || quote.specialRequest ? `<aside><b>Thoughtful details</b><p>${quote.complimentary ? `${escapeHtml(quote.complimentary)} ` : ''}${quote.specialRequest ? `Client request: ${escapeHtml(quote.specialRequest)}` : ''}</p></aside>` : ''}</div><section class="print-quote-products${items.length > COMBO_COLLAGE_PRODUCTS ? ' expanded-products' : ''}"><span>YOUR THOUGHTFULLY CURATED SET</span><div>${productStrip}</div></section><section class="print-quote-inclusions"><span>WHAT’S INSIDE YOUR CURATED SET</span><ul class="${inclusions.length > COMBO_COLLAGE_PRODUCTS ? 'many-inclusions' : ''}">${inclusions.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></section><div class="print-quote-total"><span>Price per curated set</span><b>${money(quote.price)}</b><span>Curated sets</span><b>${quote.quantity}</b>${quote.discountAmount ? `<span>${escapeHtml(quoteDiscountLabel(quote))}</span><b>− ${money(quote.discountAmount)}</b>` : ''}<strong>Celebration total <b>${money(quote.total)}</b></strong></div><p class="print-quote-fulfilment"><b>Collection &amp; delivery</b>${escapeHtml(fulfilmentNote)}</p></div><footer><span>✿</span> MERAKI &amp; MIRTH <em>For the moments worth thanking.</em></footer></section>`;
-  printWithFilename(pdfExportFilename('Quote', quote.clientName, quote.title));
+ const quote = quoteValues();
+ if (!quote.combo) return notify('Choose a saved combo before downloading a quote.');
+ const button = $('#exportQuote'); setExportPending(button, true, 'Preparing PDF…');
+ try { await exportQuoteNativeEnhanced(quote); notify('Your quote is ready to save or share.', 'success'); }
+ catch (error) { notify(error.message || 'Could not create the quote PDF.'); }
+ finally { setExportPending(button, false); }
 }
 const pendingBusinessWrites = new Map();
 async function writeOnce(kind, payload, execute) {
@@ -819,72 +809,47 @@ async function saveOrder() { if (savingQuote || !assertAccess()) return; if ($('
 }
 
 async function exportQuoteNativeEnhanced(quote) {
-  const { jsPDF } = window.jspdf || {};
-  if (!jsPDF) throw new Error('The PDF tool is still loading. Please try again in a moment.');
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
-  const items = quoteSetItems(quote);
-  const inclusions = quoteClientInclusions(quote);
-  pdfTileCache.clear();
+ const { jsPDF } = window.jspdf || {};
+ if (!jsPDF) throw new Error('The PDF tool is still loading. Please try again in a moment.');
+ const epoch = dataEpoch, doc = new jsPDF({unit:'mm',format:'a4',compress:true}), design = ProductCatalogue;
+ const items = quoteSetItems(quote);
+ pdfTileCache.clear();
+ try {
   await preloadPdfProductImages(items);
-  pdfFrame(doc);
   const logo = await imageDataForPdf('assets/meraki-mirth-logo-original.png');
-  if (logo) doc.addImage(logo, 'JPEG', 14, 14, 24, 24, undefined, 'FAST');
-  pdfText(doc, 'YOUR CELEBRATION QUOTE', 43, 18, 145, { style: 'bold', size: 8, color: pdfPalette.gold });
-  const headerEnd = pdfText(doc, quote.title, 43, 28, 150, { font: 'times', style: 'bold', size: 22, color: pdfPalette.ink, line: 1.03 });
-  pdfText(doc, 'Prepared with warmth by Meraki & Mirth', 43, headerEnd + 2, 145, { font: 'times', style: 'italic', size: 10, color: pdfPalette.muted });
-  doc.setDrawColor(...pdfPalette.line); doc.line(14, 51, 196, 51);
-  let y = pdfText(doc, quoteThankYou(quote), 14, 64, 182, { font: 'times', style: 'italic', size: 11.5, color: pdfPalette.muted, line: 1.4 });
-  y = pdfText(doc, quote.combo.name, 14, y + 5, 182, { font: 'times', style: 'bold', size: 19, color: pdfPalette.ink, line: 1.04 });
-  pdfText(doc, tagLabel(normalizeTag(quote.combo.occasion)).toUpperCase(), 14, y + 2, 182, { style: 'bold', size: 7.5, color: pdfPalette.gold });
-  const eventSchedule = quote.eventDate ? `Event: ${formattedDate(quote.eventDate)}` : '', deliveryDetails = quoteDeliveryDetails(quote);
-  if (eventSchedule) pdfText(doc, eventSchedule, 14, y + 10, 182, { style: 'bold', size: 8, color: pdfPalette.gold });
-  if (deliveryDetails.length) { const deliveryY = y + (eventSchedule ? 15 : 10); pdfText(doc, 'DELIVERY DETAILS', 14, deliveryY, 182, { style: 'bold', size: 7, color: pdfPalette.gold }); pdfText(doc, deliveryDetails.join('   |   '), 14, deliveryY + 4, 182, { size: 8, color: pdfPalette.muted }); }
-  const cardTop = 99;
-  const imageRows = items.length > COMBO_COLLAGE_PRODUCTS ? 2 : 1;
-  const imageColumns = Math.ceil(items.length / imageRows);
-  // Keep the smaller gallery centred, with generous breathing space around
-  // each plus. Six to twelve products use two balanced rows instead of a
-  // narrow, crowded strip.
-  const imageSize = imageRows === 2 ? 20 : items.length > 5 ? 20 : 24;
-  const imageGap = imageRows === 2 ? 6 : items.length > 5 ? 6 : 7;
-  const productCardHeight = imageRows === 2 ? 66 : 44;
-  doc.setFillColor(255, 255, 255); doc.setDrawColor(...pdfPalette.line); doc.roundedRect(14, cardTop, 182, productCardHeight, 3, 3, 'FD');
-  pdfText(doc, 'YOUR THOUGHTFULLY CURATED SET', 20, cardTop + 9, 170, { style: 'bold', size: 7, color: pdfPalette.gold });
-  for (let index = 0; index < items.length; index += 1) {
-    const row = Math.floor(index / imageColumns);
-    const rowStart = row * imageColumns;
-    const itemsInRow = Math.min(imageColumns, items.length - rowStart);
-    const rowWidth = itemsInRow * imageSize + Math.max(0, itemsInRow - 1) * imageGap;
-    const x = 105 - rowWidth / 2 + (index - rowStart) * (imageSize + imageGap);
-    const imageY = cardTop + 14 + row * (imageSize + imageGap);
-    await pdfProductImage(doc, items[index], x, imageY, imageSize, imageSize);
-    if (index < items.length - 1 && index + 1 < rowStart + itemsInRow) pdfCenteredText(doc, '+', x + imageSize + imageGap / 2, imageY + imageSize / 2 + 1, { font: 'times', size: 13, color: pdfPalette.gold });
-  }
-  const inclusionTop = cardTop + productCardHeight + 8;
-  const inclusionHeight = items.length > COMBO_COLLAGE_PRODUCTS ? 38 : 45;
-  doc.setFillColor(255, 255, 255); doc.setDrawColor(...pdfPalette.line); doc.roundedRect(14, inclusionTop, 182, inclusionHeight, 3, 3, 'FD');
-  pdfText(doc, 'WHAT’S INSIDE YOUR CURATED SET', 20, inclusionTop + 9, 170, { style: 'bold', size: 7, color: pdfPalette.gold });
-  const inclusionColumns = inclusions.length > 8 ? 3 : inclusions.length > 5 ? 2 : 1;
-  const inclusionRows = Math.ceil(inclusions.length / inclusionColumns);
-  const inclusionWidth = 166 / inclusionColumns;
-  for (let column = 0; column < inclusionColumns; column += 1) { let listY = inclusionTop + 17; for (const item of inclusions.slice(column * inclusionRows, (column + 1) * inclusionRows)) listY = pdfText(doc, `-  ${item}`, 21 + column * inclusionWidth, listY, inclusionWidth - 5, { size: inclusions.length > 8 ? 6.4 : 7.5, color: pdfPalette.muted, line: 1.12 }) + .8; }
-  const detailTop = inclusionTop + inclusionHeight + 9;
-  const detailLines = [
-    ['Price per curated set', pdfMoney(quote.price)],
-    ['Curated sets', String(quote.quantity)],
-    ...(quote.discountAmount ? [[quoteDiscountLabel(quote), `- ${pdfMoney(quote.discountAmount)}`]] : [])
-  ];
-  doc.setFillColor(252, 245, 235); doc.roundedRect(14, detailTop, 182, 57, 3, 3, 'F');
-  detailLines.forEach(([label, value], index) => { const lineY = detailTop + 10 + index * 10; pdfText(doc, label, 21, lineY, 78, { size: 8.8, color: pdfPalette.muted }); pdfText(doc, value, 91, lineY, 35, { style: 'bold', size: 11, color: pdfPalette.ink }); });
-  pdfText(doc, 'Celebration total', 132, detailTop + 19, 56, { style: 'bold', size: 9, color: pdfPalette.ink });
-  pdfText(doc, pdfMoney(quote.total), 132, detailTop + 32, 58, { style: 'bold', size: 17, color: pdfPalette.ink });
-  pdfText(doc, 'COLLECTION & DELIVERY', 21, detailTop + 42, 166, { style: 'bold', size: 6.2, color: pdfPalette.gold });
-  pdfText(doc, 'Home pickup is always welcome. If you prefer delivery, we will gladly arrange it; Porter charges apply at actuals.', 21, detailTop + 46, 166, { size: 6.6, color: pdfPalette.muted, line: 1.12 });
-  const notes = [quote.complimentary ? `Complimentary: ${quote.complimentary}` : '', quote.specialRequest ? `Request: ${quote.specialRequest}` : ''].filter(Boolean).join(' ');
-  if (notes && detailTop < 210) pdfText(doc, notes, 14, detailTop + 62, 182, { size: 7.2, color: pdfPalette.muted, line: 1.15 });
-  const filename = pdfExportFilename('Quote', quote.clientName, quote.title);
-  await shareNativePdf(doc, filename, filename.replace(/\.pdf$/i, ''));
+  await drawNativeCataloguePage(doc,[quote.combo],'',1,1,2,logo,{client:quote.clientName,price:quote.price});
+  let y;
+  const nextPage = () => { doc.addPage(); design.frame(doc,{title:'Your Celebration Quote',client:quote.clientName,page:doc.getNumberOfPages(),pages:2,logo}); y=65; };
+  nextPage();
+  const paragraph = (value,{size=11,style='normal',color=design.palette.ink}={}) => {
+   doc.setFont('helvetica',style);doc.setFontSize(size);
+   const lines=doc.splitTextToSize(pdfSafeText(value),178),height=size*.3528*1.3;
+   for(const line of lines){if(y+height>267)nextPage();doc.setFont('helvetica',style);doc.setFontSize(size);doc.setTextColor(...color);doc.text(line,16,y);y+=height;}
+   y+=5;
+  };
+  paragraph(quote.title,{size:20,style:'bold'});
+  paragraph(quoteThankYou(quote),{color:design.palette.muted});
+  paragraph(`Curated set: ${quote.combo.name}`,{style:'bold'});
+  paragraph(`Price per curated set: ${pdfMoney(quote.price)}`);
+  paragraph(`Quantity: ${quote.quantity} sets`);
+  if(quote.netWrapping)paragraph(`Net wrapping: ${pdfMoney(quote.netWrappingUnitPrice)} per set (${pdfMoney(quote.netWrappingTotal)} total)`);
+  if(quote.additionalCostTotal)paragraph(`Additional charges: ${pdfMoney(quote.additionalCostTotal)}`);
+  if(quote.discountAmount)paragraph(`${quoteDiscountLabel(quote)}: - ${pdfMoney(quote.discountAmount)}`);
+  paragraph(`Celebration total: ${pdfMoney(quote.total)}`,{size:18,style:'bold'});
+  if(quote.eventDate)paragraph(`Event date: ${formattedDate(quote.eventDate)}`);
+  for(const detail of quoteDeliveryDetails(quote))paragraph(detail);
+  if(quote.complimentary)paragraph(`Complimentary touches: ${quote.complimentary}`);
+  if(quote.specialRequest)paragraph(`Special request: ${quote.specialRequest}`);
+  paragraph('Collection & delivery',{style:'bold'});
+  paragraph('Home pickup is always welcome. If you prefer delivery, we will gladly arrange it; Porter charges apply at actuals.',{color:design.palette.muted});
+  const pages=doc.getNumberOfPages();
+  for(let page=1;page<=pages;page++){doc.setPage(page);doc.setFillColor(...design.palette.paper);doc.rect(175,279,22,10,'F');design.text(doc,`${String(page).padStart(2,'0')} / ${String(pages).padStart(2,'0')}`,177,285,20,{size:8,color:design.palette.gold});}
+  if(epoch!==dataEpoch || !accessGranted)throw Error('Session changed; export cancelled.');
+  const filename=pdfExportFilename('Quote',quote.clientName,quote.title);
+  if(isNativeApp())await shareNativePdf(doc,filename,'Celebration quote');else await saveExportBlob(doc.output('blob'),filename,'Celebration quote');
+ } finally { pdfTileCache.clear(); }
 }
+
 function orderDateKey(order) { return String(order.createdAt || '').slice(0, 10); }
 function currentYearDateRange() { const now = new Date(); const today = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-'); return { from: `${now.getFullYear()}-01-01`, to: today }; }
 function filteredOrders() { return orders.filter(order => (!ordersFrom || orderDateKey(order) >= ordersFrom) && (!ordersTo || orderDateKey(order) <= ordersTo)); }
